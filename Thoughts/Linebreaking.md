@@ -1,6 +1,6 @@
 # Knuth's Linebreaking Algorithm for non-Programmers
 
-Hello. My name is Abdul Rahman Sibahi. I am an architect (the phyical kind), not a programmer, and I am interested in Typesetting and fonts. The common wisdom online is that Knuth's linebreaking algorithm, implemented for TeX some time back, is the all end all way to typeset text on a printed page. But there are no clear explanations of what the algorithm *is*, beyond handwavey explanations of boxes and glue and penalties. I, being a lemming, strove to understand the algorithm, and I believe I can explain it succinctly. I promise not to use the phrase "Dynamic Programming".
+I am an architect (the phyical kind), not a programmer, and I am interested in Typesetting and fonts. The common wisdom online is that Knuth's linebreaking algorithm, implemented for TeX some time back, is the all end all way to typeset text on a printed page. But there are no clear explanations of what the algorithm *is*, beyond handwavey explanations of boxes and glue and penalties. I, being a lemming, strove to understand the algorithm, and I believe I can explain it succinctly. I promise not to use the phrase "Dynamic Programming".
 
 [Here is Donald Knuth and Michael Plass's 1981 paper](http://www.eprg.org/G53DOC/pdfs/knuth-plass-breaking.pdf). It is more thorough and rigorous than what I am writing here. [Here is another article explaining the algorithm in a different manner](https://github.com/jaroslov/knuth-plass-thoughts/blob/master/plass.md).
 
