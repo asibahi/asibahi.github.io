@@ -105,6 +105,8 @@ fn build_line(input: ShapedText,
 
     */
 
+    todo!();
+
     if sum_boxes + (count_glue * max_space) < desired_width {
         return Error::LineTooLoose;
     }
@@ -131,3 +133,9 @@ fn build_line(input: ShapedText,
 }
 
 ```
+
+## Spacing Clusters
+
+I promised unhingedness. How about this: 
+
+![spacing clusters justification](just-cluster-spacing.png)
