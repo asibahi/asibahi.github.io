@@ -1,5 +1,7 @@
 # Practical Arabic Justification
 
+# STILL WIP
+
 Here are some links that you might want to look at:
 - [Deficiencies of Handling Arabic Script in OpenType. Aida Sakkal and Mamoun Sakkal. Tech Talks 2021](https://www.youtube.com/watch?v=Ai4dgLpFMx8). Mamoun Sakkal is a rather well known Arabic type designer. The video goes over the practical problems of justification in detail.
 - [On Arabic justitifcation part 2 by Titus Nemeth](https://research.reading.ac.uk/typoarabic/on-arabic-justification-part-2-software-implementations/). (Look at parts 1 and 3 as well).
@@ -83,7 +85,7 @@ You might reasonably point out that this does not solve the problem, and the tex
 
 The real issue with `jalt` and font-driven justification, if you would call it that, is that apparently it is very underspecified, and the support, if it exists at all, is inconsistent.
 
-You can see in the previous screenshot how in the paragraph with `jalt`, InDesign turns it on for *every word*, and not only when needeed. This, honestly, defeats the purpose. The text looks way too loose. The manual justification sample, on the right, is more measured when using the justification alternates. (Although because InDesign does not actually let you access `jalt` directly, it uses stylistic sets instead.) The following page is perhaps more illustrative (the middle and right columns are identical by the way):
+You can see in the previous screenshot how in the paragraph with `jalt`, InDesign turns it on for *every word*, and not only when needed. This, honestly, defeats the purpose. The text looks way too loose. The manual justification sample, on the right, is more measured when using the justification alternates. (Although because InDesign does not actually let you access `jalt` directly, it uses stylistic sets instead.) The following page is perhaps more illustrative (the middle and right columns are identical by the way):
 
 ![jalt Justification](sakkal-kitab-specimen2.png)
 
