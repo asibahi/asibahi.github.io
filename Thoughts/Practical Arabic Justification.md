@@ -1,7 +1,8 @@
-# Practical Arabic Justification
+# Thoughts on Arabic Justification
 
-# STILL WIP
+For the tl;dr, skip to [Priority](#priority-list). This article is a follow up to [this one](./Linebreaking.md).
 
+## Background Reading 
 Here are some links that you might want to look at:
 - [Deficiencies of Handling Arabic Script in OpenType. Aida Sakkal and Mamoun Sakkal. Tech Talks 2021](https://www.youtube.com/watch?v=Ai4dgLpFMx8). Mamoun Sakkal is a rather well known Arabic type designer. The video goes over the practical problems of justification in detail.
 - [On Arabic justitifcation part 2 by Titus Nemeth](https://research.reading.ac.uk/typoarabic/on-arabic-justification-part-2-software-implementations/). (Look at parts 1 and 3 as well).
@@ -22,9 +23,9 @@ In Arabic, they *used to* hyphenate words around 1400 years ago. They, sadly, no
 
 ![A page from the Quran](IMG_1070.jpg)
 
-If you know anything about the Arabic script, you know two things: 1. It is written from right to left, and 2. in words, the letters are connected, but not all of them! (Letters are almost never connected *across* words.) So for example in the word ديمقراطية, meaning Democracy, well it is one word, but there are four "clusters". Like I said, we do not "hyphenate" (I am the term loosely here as there no actual hyphens) between those any more, but it is an important concept to keep in mind.
+If you know anything about the Arabic script, you know two things: 1. It is written from right to left, and 2. in words, the letters are connected, but not all of them! (Letters are almost never connected *across* words.) So for example in the word ديمقراطية, meaning Democracy, well it is one word, but there are four "clusters". Like I said, we do not "hyphenate" (I am using the term loosely here as there are no actual hyphens) between those any more, but it is an important concept to keep in mind.
 
-Which brings us back to the original problem statemnt: if there line width is so small that merely adjusting the spaces between words would be unseemly, what do you do? I am going to abuse my version of Microsoft Word a bit for this article. Here is an image of line of poetry justified using space stretching only, (Considering it is poetry, breaking words across lines is not even an option).
+Which brings us back to the original problem statemnt: if the line width is so small that merely adjusting the spaces between words would be unseemly, what do you do? I am going to abuse my version of Microsoft Word a bit for this post. Here is an image of line of poetry justified using space stretching only. (Considering it is poetry, breaking words across lines is not even an option).
 
 ![Space Justification](just-calibri-spaces.png)
 
@@ -41,17 +42,17 @@ I have a few unhinged ideas. But let's talk about the usual approach first.
 
 If you have watched Mamoun Sakkal's video. linked above, on the technical limitations of OpenType when it comes to Arabic script, you would have noticed he spends a lot of the video talking about "Tatweel", or what is sometimes called by its Persian name, Kashida.
 
-Kashia is a character on all Arabic keyboard. It does not have a meaning, by itself or by others, and it is merely decorartive. It is a typographinc (typesetting?) trick, that takes advantage of Arabic's connected nature. For an Arabic reader (and this applies to literally every language that uses the Arabic script), there is literally no difference between جمل and جـــــــمــــــــل. The second one simply looks longer. You can probably see where this is going.
+[Kashia is a character on all Arabic keyboards](https://www.compart.com/en/unicode/U+0640). It does not have a meaning, by itself or by others, and it is merely decorartive. It is a typographinc (typesetting?) trick, that takes advantage of Arabic's connected nature. For an Arabic reader (and this applies to literally every language that uses the Arabic script), there is literally no difference between جمل and جـــــــمــــــــل. The second one simply looks longer. You can probably see where this is going.
 
 The kashidas method basically inserts these characters betwen the individual letters of clusters.
 
 ![Kashida Justification](just-calibri-kashida.png)
 
-The main problem with this is that it is *dumb*. So dumb it is useless. You can see how it adds some kashidas after بشر on the first line. (Reminder: "after" meand on the left.) This can be fixed, and this is probably a MS Word problem, but the other problem is a bit more subtle, and it is not clear with Calibri (as it was probably designed with this behavior in mind). Let us try with a different font by the same designer, Sakkal Majalla.
+The main problem with this is that it is *dumb*. So dumb it is useless. You can see how it adds some kashidas after بشر on the first line. (Reminder: "after" means on the left.) This can be fixed, and this is probably a MS Word problem, but the other problem is a bit more subtle, and it is not clear with Calibri (as it was probably designed with this behavior in mind). Let us try with a different font by the same designer, Sakkal Majalla.
 
 ![Kashida Justification](just-majalla-kashida.png)
 
-You can see it in the word التراب in the second line. The font uses (and abuses) an OpenType feature called Contextual Alternates, which basically means some letters look different when followed by specific letters, and it is all over the place in every half-decent Arabic font online.
+You can see it in the second line, in the words التراب and الحسن, and in the third line in فابتغي, a bit more subtly. The font uses (and abuses) an OpenType feature called Contextual Alternates, which basically means some letters look different when followed by specific letters, and it is all over the place in every half-decent Arabic font online.
 
 The software, for whatever reason, *does not* call the shaper (HarfBuzz and the like) again after inserting the kashidas, and in fonts that use cursive shaping and do not sit on the baseline, you end up with this: (Noto Nastaliq Urdu)
 
@@ -258,8 +259,39 @@ This code could be even expanded to take a bunch of OpenType features ( evne spe
 
 This is probably the best solution. Sadly, it is not (yet?) common in most fonts. Definitely not the ones shipping by default in operating systems.
 
+For the uninitiated, [here is a useful Google Fonts primer on what variable fonts are and how they work](https://fonts.google.com/knowledge/introducing_type/introducing_variable_fonts). [This is an article by John Hudson of Tiro Typeworks](https://medium.com/variable-fonts/https-medium-com-tiro-introducing-opentype-variable-fonts-12ba6cd2369). The most useful part of Variable Fonts, imo, is that font designers are free to implement any variable axis they want. The spec has five axis with a .. well .. specified behaviour, but designers are not restricted by them. The five registered axis are Weight `wght`, Width `wdth`, Optical size `opsz`, Italic `ital`, and Slant `slnt`. But how about [Temprature](https://codepen.io/mandymichael/pen/pxXNbr)? [Stretch](https://www.29lt.com/product/29lt-okaso/)? [Serif](https://www.type-together.com/belarius-font)? [The possibilities are practically endless](https://v-fonts.com/tags/C5).
+
+For justification, one can either use the Width axis (as [Sultan al-Maqtari does with his font Sultan Plain](https://sites.google.com/view/sultanfonts/plain)), or use what is called a `GEXT`, a Glyph Extension axis. This [article by Simon Cozens](https://simoncozens.github.io/more-on-newbreak/) has an example for an Armenian font. The simple idea is that you break the lines with a greedy algorithm (what Knuth calls first-fit), and then simply .. increase the width, or the glyph extension, of your lines to fit in the desired space.
+
+This gives back autonomy to the font designer: the line stretchs the way they see fit. It is simpler to program for software makers than the hodgepodge of selecting `jalt`s above. The spaces are all at the ideal space. The text all looks neat. [Here are a few demos of how this might look in practice](https://github.com/jmsole/gext-demos). There are no downsides!!
+
+Well the main downside is that it is not widely available, and there is no generally agreed on axis for justification use. (That last point is why Cozens is suggesting the `GEXT` axis.) The other (minor) downside is is that the axis are *not* guaranteed to be evenly distributed. If you measure the line's width at axis point 0, and measure it again at axis point 100, there is zero guarantee that the line width at axis point 50 would be their average. Also it is all a bit wonky in browsers. But who cares about browsers?
+
+From a naive point of view, the typestter should do the following:
+1. Check if the font is variable, 
+2. Check if it has a `GEXT` axis, (and if not use the `wdth` axis or just ask the user!)
+3. Use the greedy algorithm to break lines.
+4. Stretch each line until they fit!!
+
+This might still fail, by the way, as not every line is guaranteed to be filled (as not every character us guaranteed to be affected by every axis.) But it is hell a lot better than inserting ugly straight line Kashidas.
+
 ## Spacing Clusters
 
 I promised unhingedness. How about this: 
 
 ![spacing clusters justification](just-cluster-spacing.png)
+
+Instead of spacing between words, Arabic text can increase the spacing between clusters!! Nobody does it this way but it would be cool. Do not actually do that.
+
+## Priority list
+
+Before setting up rules for justification, the typesetter first and foremost should ask the user which method to use! The user know the font they're using and they know which method they prefer. If they want to justify their text by flexing spaces (aka Knuth-Plass), let them. If they want to use the *weight* axis instead of the *width* axis, sure. If they want to specify specfic OpenType features to use for justification (like using a number of Stylistic sets or Swashes), then that's what they want.
+
+It is perhaps the best way to go on about this, honestly. Unless they ask for Kashidas, then you crash the software.
+
+If I were to create a priority system of justification, I would set it as follows:
+
+1. If the font is [variable](#variable-fonts), check if it has an axis specified for justification. Could be `GEXT` or `JSTF` or w/e (or ask the user!).
+2. If it does, use it. If it does not, check for [`jalt`](#opentype-features)s.
+3. If they exist, use them. If they do not, well now you have to use [Kashidas](#kashidas). Insert those between letters as needed. But not any letters!! There are rules!!
+4. And for God's sake reshape the text after inserting them Kashidas. It is what the shaper is there for.
