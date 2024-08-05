@@ -56,8 +56,7 @@ $accent: rgb(203, 132, 0);
 
 }
 
-@media (prefers-color-scheme: light) {
-    body {
-        @include light-theme;
-    }
+
+body {
+    @include light-theme;
 }
