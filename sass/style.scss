@@ -93,12 +93,19 @@ pre {
 .footnote-definition {
     margin-top: 1em;
 
+    font-size: 10pt;
+    line-height: 1.2em;
+
     &:first-of-type {
         margin-top: 3em;
     }
 
     p {
         display: inline;
+    }
+
+    code {
+        font-size: inherit;
     }
 }
 
