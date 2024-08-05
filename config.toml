@@ -10,11 +10,13 @@ default_language = "en"
 highlight_code = true
 highlight_theme = "inspired-github"
 
+extra_syntaxes_and_themes = ["syntax"]
+
 [extra]
 
 links = [
     { title = "Mail", href = "mailto:a.sibahi@gmail.com" },
-    { title = "Twitter", href = "https://x.com/@asibahi"},
-    { title = "Mastodon", href = "https://typo.social/@asibahi"},
+    { title = "Twitter", href = "https://x.com/@asibahi" },
+    { title = "Mastodon", href = "https://typo.social/@asibahi" },
     { title = "GitHub", href = "https://github.com/asibahi" },
 ]
