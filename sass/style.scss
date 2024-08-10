@@ -21,6 +21,12 @@ body {
     flex-direction: column;
 }
 
+sup {
+    vertical-align: top;
+    position: relative; top: -0.5em;
+}
+
+
 .header-links {
     a {
         margin-right: 0.5em;
