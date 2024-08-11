@@ -20,3 +20,5 @@ links = [
     { title = "typo.social", href = "https://typo.social/@asibahi" },
     { title = "GitHub", href = "https://github.com/asibahi" },
 ]
+
+blurp = "Architect and hobbyist. Bad at websites and witty bios."
