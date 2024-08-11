@@ -9,7 +9,7 @@ For a project to do with the language, I figured I would build a library of sort
 
 The game is weird. It is much less known than Freeling's other games like Havannah (for which I wrote [an implementation for in Rust](https://github.com/asibahi/w9l)) and Grand Chess (which I built a physical board for). Even Freeling himself does not put much stock into it, and is more interested in the tile set itself (which he calls [the China Labyrinth](https://mindsports.nl/index.php/puzzles/tilings/china-labyrinth/), even though they have nothing to do with China) than the game. He made other games with the tile set which you can find by browsing his site.
 
-I am writing this post first as a way to organize my thoughts on how to represent the game in code. I will not be explaining the rules of the game, see the above links for that, but I will be talking about to represent the game in code form.
+I am writing this post first as a way to organize my thoughts on how to represent the game in code. It is a semi organized, semi-chronologically-sorted brain dump: I am writing it as I iterate over the code. I will be talking mostly about how to represent the game in code form, leaving the rules for later.
 
 ## Tiles
 
@@ -154,7 +154,7 @@ Hand :: distinct [HAND_SIZE]Tile
 hands_init :: proc() -> (guest: Hand, host: Hand) {
 	for i in 0 ..< u8(HAND_SIZE) {
 		guest[i] = transmute(Tile)(i + 0b00_000_001)
-		host[i] = transmute(Tile)(i + 0b11_000_001)
+		host[i]  = transmute(Tile)(i + 0b11_000_001)
 	}
 
 	return
@@ -207,7 +207,7 @@ test_hand_get_tile :: proc(t: ^testing.T) {
 
 After that, I figured I would make sure for every weird logic I make I'd have to write a bunch of tests to .. test it, and sanity check my code.
 
-## *The* Game Object
+## *The* Game Object - First Draft
 
 Now that I have the basic, naïve framework of the game's representation, I started looking into it from the other side: top down.
 
@@ -225,16 +225,18 @@ Player :: enum u8 {
 
 Status :: enum u8 {
 	Ongoing,
-	GuestWin,
-	HostWin,
+	Guest_Win,
+	Host_Win,
 	Tie,
 }
 
+// The Object of our attention
 Game :: struct {
 	board:                 Board,
 	to_play:               Player,
 	status:                Status,
 	guest_hand, host_hand: Hand,
+	// ... more to come
 }
 ```
 
@@ -242,7 +244,7 @@ To inquire about moves, a `Move` struct is needed[^3]. A move is simply a placem
 
 ```odin
 Move :: struct {
-	loc:  Hex,
+	hex:  Hex,
 	tile: Tile,
 }
 ```
@@ -251,7 +253,7 @@ This misses one big thing: Groups. Dominions is a game of territory, based on Go
 
 ## Bitboards
 
-Before talking about Groups, [Bitboards](https://en.wikipedia.org/wiki/Bitboard) need an introduction.
+Before talking about Groups, [Bitboards](https://en.wikipedia.org/wiki/Bitboard) warrant an introduction.
 
 Bitboards are, at their core, based on a simple observations: a chessboard has 64 squaresm and a `u64` has 64 bits. By tying each bit address to a specific square, *any* binary value can be mapped.
 
@@ -287,7 +289,7 @@ bb_get_bit :: proc(bb: Bitboard, bit: int) -> bool {
 Not to get ahead of the topic, but merging two of these bitboards (bitwise `OR`) is now as simple as this:
 
 ```odin
-group_capture :: proc(winner, loser: ^Group, board: ^Board) {
+group_capture :: proc(winner, loser: ^Group) {
 	// ----- snipped
 	winner.tiles |= loser.tiles // the `tiles` field is a Bitboard.
 	// ----- snipped
@@ -400,39 +402,265 @@ And after compiling this to a `staticlib`, we do this from the Odin side:
 foreign import slotmap "deps/slotmap/libslotmap.a"
 import "core:c"
 
-SmPtr :: distinct rawptr
-SmKey :: distinct c.uint64_t
-SmItem :: ^Group
+Slot_Map :: distinct rawptr
+Sm_Key :: distinct c.uint64_t
+Sm_Item :: ^Group
 
 foreign slotmap {
-	slotmap_init	:: proc() -> SmPtr ---
-	slotmap_destroy :: proc(sm: SmPtr) ---
-	slotmap_insert	:: proc(sm: SmPtr, item: SmItem) -> SmKey ---
-	slotmap_contains_key :: proc(sm: SmPtr, key: SmKey) -> c.bool ---
-	slotmap_get	:: proc(sm: SmPtr, key: SmKey) -> SmItem ---
-	slotmap_remove 	:: proc(sm: SmPtr, key: SmKey) -> SmItem ---
+	slotmap_init	:: proc() -> Slot_Map ---
+	slotmap_destroy :: proc(sm: Slot_Map) ---
+	slotmap_insert	:: proc(sm: Slot_Map, item: Sm_Item) -> Sm_Key ---
+	slotmap_contains_key :: proc(sm: Slot_Map, key: Sm_Key) -> c.bool ---
+	slotmap_get	:: proc(sm: Slot_Map, key: Sm_Key) -> Sm_Item ---
+	slotmap_remove 	:: proc(sm: Slot_Map, key: Sm_Key) -> SmItem ---
 }
 ```
 
-Odin's type system allows a `rawptr` to really be cast to .. any pointer. So here all the types I *know* are the same, regardless of C's type erasure, are marked with the same alias. Even though, as far as the C ABI is concerned, both `SmPtr` and `SmItem` are `rawptr`s, but *I* know the difference. Conveniently, `SmItem` can now be easily derefrenced to get the underlying Group without casting.
+Odin's type system allows a `rawptr` to really be cast to .. any pointer. So here all the types I *know* are the same, regardless of C's type erasure, are marked with the same alias. Even though, as far as the C ABI is concerned, both `Slot_Map` and `Sm_Item` are `rawptr`s, but *I* know the difference. Conveniently, `Sm_Item` can now be easily derefrenced to get the underlying Group without casting.
 
 Having done that, and as much as I am pleased with myself for getting this to work, I do not like that the keys are `u64`s. They are *large*: much larger than any number of groups/indices required. Even in the unlikely event of each tile placed forming its own group, there would be a maximum of 126 groups (2 x 63). Eight bits would be enough to have a unique key for every possible group in the game. Something to optimize later, perhaps?
 
-## Groups
+## Groups, and Game Object - Second Draft
 
-A group is, essentially, two bitboards:
+A group is, simply, two bitboards:
 
 ```odin
 Group :: struct {
 	tiles:     Bitboard,
-	liberties: Bitboard, 
-	
-	alive:     bool, // unsure if this is needed. Still WIP.
+	liberties: Bitboard, 	
 }
 ```
 
-Each group keeps track of its location (which hexes it occupies) amd its liberties (wheere it can be captured).
+Each group keeps track of its location (which hexes it occupies) and its liberties. A group's size and liberty count is calculated by calculating the cardinality of the respective bitboards.
 
+```odin
+bb_card :: proc(bb: Bitboard) -> (ret: int) {
+	#unroll for i in 0 ..< 7 { // premature optimization, perhaps?
+		ret += card(bb[i])
+	}
+	return
+}
+
+group_size :: proc(grp: ^Group) -> int {
+	return bb_card(grp.tiles)
+}
+
+
+group_life :: proc(grp: ^Group) -> int {
+	return bb_card(grp.liberties)
+}
+```
+
+To track groups, two fields are added to the Game Object: one for each player. Additionally, a "Group Map" of sorts might be needed to quickly look up the group any cell belongs to. (This is the initial idea, but keeping all these things in sync seems daunting. There could be a better design that is only revealed with a conrete implementation.)
+
+Revisiting the `Game` struct from before:
+
+```odin
+Game :: struct {
+	board:                 Board,
+	to_play:               Player,
+	status:                Status,
+	last_move:             Maybe(Move), // <-- I will get to that
+	guest_hand, host_hand: Hand,
+	groups_map:            [CELL_COUNT]Sm_Key,
+	guest_grps, host_grps: Slot_Map,
+}
+``` 
+
+Note that the score is not recorded here. As with many aspects of this design, I am currently unsure if it something should be tracked and updated individually with each move, or something calculated from the game state at any given moment.
+
+There is also no history tracking, which needs lists of `Move`s and past  `Boards` and `Hand`s. The slotmap, being currently the only heap allocation, complicates undoing moves trivially, so a new `Game` object would be constructed from past raw data of boards and games. I decided to ignore history tracking for now.
+
+```odin
+// A player's territory consists of the number of their pieces on the board minus the number of pieces they didn't place.
+game_get_score :: proc(game: ^Game) -> (guest, host: int) {
+	for tile in game.board {
+		(!tile_is_empty(tile)) or_continue
+		if .Controller_Is_Host in tile {
+			host += 1
+		} else {
+			guest += 1
+		}
+	}
+	for tile in game.guest_hand {
+		if !tile_is_empty(tile) do guest -= 1
+	}
+	for tile in game.host_hand {
+		if !tile_is_empty(tile) do host -= 1
+	}
+	return
+}
+```
+
+Now the game state and its metadata at any given point are neatly encoded, it is time to start thinking about how to make moves, and how to check their legality.
+
+## The Game Rules
+
+So far, I made no mention of the game's rules, only talking about its physical properties: the tiles, the board, the game zones. But players cannot place Tiles where they choose: here are the rules summarized for your convenience:
+
+![Full set of Dominions Tiles](cl-small-set.png)
+
+### Tiles
+
+- Each **Tile** has a specific set of sides it can connect to, encoded, visually, on the Tile itself.
+- Each Tile *must* match its neighboring Tiles in connections. **Connected** sides must match and **Blank** sides must match.
+- Board edges are cosidered neutral Blanks.
+
+### Groups
+
+- A **Group** is one or more Tiles of the same color (Controller) that are connected together. Adjacencies on Blank sides do not count.
+- The **Liberties** of a Group are its Connected sides border empty cells.
+- If a Group loses its last Liberty, it is captured, and all its tiles are flipped (switched Controller).
+
+### The Structure
+
+- The **Structure** is the collective name of all the connections together, in the whole board, *regardless of Controller*.
+- Disconnected parts of the Structure are called **Sections**, created as Tiles are placed on Blank adjacencies. A single Section can include multiple Groups (but a Group cannot belong to multiple Sections).
+
+### Placement
+
+*Finally*
+
+- Bears repeating: A Tile can only be placed where it matches its neighboars in Connected and Blank sides.
+- Firstly, the Guest, first player, starts by placing any Tile anywhere.
+- Afterwards, a Tile can only be placed *adjacent to an enemy Tile*, with one exception.
+- A Tile can be placed where it is not adjacent to an enemy Tile *if and only if* it is extending a Group that is a whole Section.
+- Suicide is legal. Player may place a Tile so it has no Liberties (by matching its Liberties to enemy Tiles), and is therefore immediately captured.
+- Lastly, it is illegal to cause **Oscillation**: a Section which has no Liberties. [^5]
+- A Player may, instead of placing a Tile, pass the turn instead. Or if they have no legal moves, they *must*.
+
+### Scoring
+
+- The Game ends when both players pass consecutively.
+- The winner is the Player with the highest score.
+- The score is the amount of Tiles controlled on the boad *minus* the Tiles still in Hand.
+
+## Moves, and Game Object - Third Draft
+
+Back to code. As a refresher, here is `Move`:
+
+```odin
+Move :: struct {
+	hex:  Hex,
+	tile: Tile,
+}
+```
+
+That is all a `Move` is: the player whose turn it is (as tracked by `Game`) places a `Tile` from their hand into a `Hex`, and from there follows that groups get updated and tiles get flipped and game progresses.
+
+But as a player may (or may have to) pass the turn, and as the game ends with two successive passes, `last_move` is registered in `Game` to track whether the game is about to end.[^6]
+
+To play the game, `Game` needs to have the following:
+
+- A way to make the move
+- A way to query if a move is legal
+- A way to query the list of legal moves
+
+Perhaps the most straightforward way to do it is to have `game_make_move` do *all* the work. It updates the game state, naturally, but also (based on said game state) update an embedded list of legal moves in `Game` itself. And then to check if a move is legal, simply query the embedded list of moves. Here is what `Game`, and the skeleton of `game_make_move`, look like now:
+
+```odin
+Game :: struct {
+	board:                 Board,
+	to_play:               Player,
+	status:                Status,
+	last_move:             Maybe(Move),
+	//
+	guest_hand, host_hand: Hand,
+	//
+	groups_map:            [CELL_COUNT]SmKey,
+	guest_grps, host_grps: SlotMap,
+	// 
+	legal_moves:           [dynamic]Move,
+}
+
+game_make_move :: proc(game: ^Game, candidate: Maybe(Move)) -> bool {
+	(game.status == .Ongoing) or_return // Game is over. What are you doing?
+	move, not_pass := candidate.?
+
+	// legal move check
+	(!not_pass ||
+		slice.contains(game.legal_moves[:], move) ||
+		board_is_empty(&game.board)) or_return
+
+	defer if game.status == .Ongoing {
+		switch game.to_play {
+		case .Guest:
+			game.to_play = .Host
+		case .Host:
+			game.to_play = .Guest
+		}
+		game.last_move = move
+		game_regen_legal_moves(game)
+	}
+
+	if !not_pass { 	// Pass
+		if game.last_move == nil { 	// Game ends
+			guest, host := game_get_score(game)
+			if guest > host do game.status = .Guest_Win
+			else if guest < host do game.status = .Host_Win
+			else do game.status = .Tie
+		}
+		return true
+	}
+
+	// Make move. Already known to be legal!!
+	hand_tile, _ := hand_remove_tile(active_hand, move.tile)
+	game.board[hex_to_index(move.hex)] = hand_tile
+
+	// TODO: update game state
+
+	return true
+}
+
+@(private)
+game_regen_legal_moves :: proc(game: ^Game) {
+	clear(&game.legal_moves)
+
+	// TODO: build them again
+}
+```
+
+The two `TODO`s left are probably the meat of this whole engine. It is clearer to write them out in steps, in English, before encoding them into code.
+
+### Updating the Game State
+
+The key observation, I think, is that the game state change starts from the where the last move is played. No need for a global search process, but only the exact Hex being played and the surrounding groups.
+
+The simplest, and shortest, game state change that is not a Pass, is a Tile that starts its own Section. This happens in two occasions: the first move, and whenever a Tile is only adjacent to other tiles via its Blank sides. This Tile by definition also starts a new Group. This function assumes it is only called when a move is legal.
+
+```odin
+@(private)
+group_section_init :: proc(move: Move, game: ^Game) -> (ret: ^Group, ok: bool = true) {
+	ret = new(Group) // store it on the heap. TEMPORAL SAFETY
+	
+	// Check that all Connected sides connect to empty tiles.
+	// AND find Liberties
+	for flag in move.tile & CONNECTION_FLAGS {
+		neighbor := move.hex + flag_dir(flag)
+
+		t, in_bounds := board_get_tile(&game.board, neighbor)
+		if in_bounds {
+			tile_is_empty(t^) or_return
+			bb_set_bit(&ret.liberties, hex_to_index(neighbor))
+		}
+	}
+
+	bb_set_bit(&ret.tiles, hex_to_index(move.hex) )
+
+	return
+}
+```
+
+And in `game_make_move` :
+
+```odin
+if grp, ok := group_section_init(move, game); ok {
+	key := slotmap_insert(game.host_grps, grp)
+	game.groups_map[hex_to_index(move.hex)] = key
+} 
+```
+
+The second easiest is .... I dunno
 
 
 ---
@@ -444,3 +672,7 @@ Each group keeps track of its location (which hexes it occupies) amd its liberti
 [^3]: I love that `move` is not a keyword here, which is really annoying in Rust.
 
 [^4]: Generatinal arena, generational handles, handle-based map, a rose by any other name.
+
+[^5]: It is Oscillation because the resulting Group has no Liberties, and therefore has no clear Controller, so it *oscillates* between both colors. This is way the Blank tile has no role in the game: it automatically oscillates. 
+
+[^6]: Technically, only a record of whether the last move *was* a pass is needed, but `last_move` is semantically clearer than a `last_move_was_a_pass` (or `pass_ends_the_game` or `the_end_is_nigh`) boolean or a `player_who_last_made_a_move` enum field. It may also be useful to highlight the last move in a GUI.
