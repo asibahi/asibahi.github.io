@@ -60,7 +60,7 @@ The penalties attached to breakpoints can change the evaluation of each line's c
 
 Note that these numbers for penalties are essentially arbitrary and you should try different values for different things. You can even have the user set them!
 
-Another thing of note is that sometimes a node can have more than one parent. In fact for the last breakpoint in the paragraph this is mandatory! So when you're building the graph, you might want to check if the child node you found is already recorded, and simply extend a new edge to it.
+Another thing of note is that sometimes a node can have more than one parent. In fact for the last breakpoint in the paragraph this is mandatory! So when you are building the graph, you might want to check if the child node you found is already recorded, and simply extend a new edge to it.
 
 ### Pseudocode
 
@@ -109,7 +109,7 @@ fn line_break (input: ShapedText, width: f64) -> Vec<Line> {
                         graph.add_edge(parent: bps[i],
                                        child: bps[j], 
                                        edge: line);
-                    // and if ir wasn't, create it.
+                    // and if it wasn't, create it.
                     } else {
                         graph.add_node(bps[j], 
                                        AsChild(parent: bps[i], 
@@ -146,7 +146,7 @@ I have been looking a the line breaking algorithm implemented in Typst. It follo
 
 1. Beginning to the first bp "a" has a cost of 2357.
 2. First bp "a" to second bp "king" has a cost of 2357 (cost of "a") plus whatever the cost of "a" to "king" is. We find that Beginning to second bp "king" has a cost of 1734, which is less than 2357 + x, so we record that "king" has a cost of 1734.
-3. Third bp "was" goes through the same logic with every previous breakpoint, and the graph artist already found out the lowest cost "was" can have is 2363 (2357 + 6), we record that for "was" noting that we're basing this off of "a".
+3. Third bp "was" goes through the same logic with every previous breakpoint, and the graph artist already found out the lowest cost "was" can have is 2363 (2357 + 6), we record that for "was" noting that we are basing this off of "a".
 4. Fourth bp "so" , when connecting with "a" has a cost of 4633 (2276 + 2357). When connecting with "king" it is 6426 (4692 + 1734). So we record that for "so" the least value we doung was 4633 while connecting through "a".
 5. etc for each following one.
 

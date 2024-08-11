@@ -16,7 +16,7 @@ Here are some links that you might want to look at:
 
 ## Intro
 
-Justification is a nasty and difficult problem. When justifying over sufficiently long lines, the [Knuth-Plass algorithm](Linebreaking.md) is more than enough. However, when the lines are narrow, for example in a newspaper column, there just arent enough words in a line to make small changes to the space between them unnoticeable, and you need to take more drastic measures.
+Justification is a nasty and difficult problem. When justifying over sufficiently long lines, the [Knuth-Plass algorithm](Linebreaking.md) is more than enough. However, when the lines are narrow, for example in a newspaper column, there just are not enough words in a line to make small changes to the space between them unnoticeable, and you need to take more drastic measures.
 
 For English, and Latin (and Cyrillic?) script-based languages in general, the usual solution is [hyphenation](https://en.wikipedia.org/wiki/Hyphen#Justification_and_line-wrapping). This does not apply to every script. For example, the Japanese script have their own [justification algorithm](https://www.w3.org/TR/jlreq/?lang=en) that does not "just" add spaces between characters. Other scripts have their own rules going on.
 
@@ -292,7 +292,7 @@ Instead of spacing between words, Arabic text can increase the spacing between c
 
 ## Priority list
 
-Before setting up rules for justification, the typesetter first and foremost should ask the user which method to use! The user know the font they're using and they know which method they prefer. If they want to justify their text by flexing spaces (aka Knuth-Plass), let them. If they want to use the *weight* axis instead of the *width* axis, sure. If they want to specify specfic OpenType features to use for justification (like using a number of Stylistic sets or Swashes), then that's what they want.
+Before setting up rules for justification, the typesetter first and foremost should ask the user which method to use! The user know the font they are using and they know which method they prefer. If they want to justify their text by flexing spaces (aka Knuth-Plass), let them. If they want to use the *weight* axis instead of the *width* axis, sure. If they want to specify specfic OpenType features to use for justification (like using a number of Stylistic sets or Swashes), then that's what they want.
 
 It is perhaps the best way to go on about this, honestly. Unless they ask for Kashidas, then you crash the software.
 
