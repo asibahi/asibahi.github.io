@@ -414,7 +414,9 @@ foreign slotmap {
 }
 ```
 
-Odin's type system allows a `rawptr` to really be cast to .. any pointer. So here all the types I *know* are the same, regardless of C's type erasure, are marked with the same alias. Even tho, as far as the C ABI is concerned, both `SmPtr` and `SmItem` are `rawptr`s, but *I* know the difference. Conveniently, `SmItem` can now be easily derefrenced to get the underlying Group without casting.
+Odin's type system allows a `rawptr` to really be cast to .. any pointer. So here all the types I *know* are the same, regardless of C's type erasure, are marked with the same alias. Even though, as far as the C ABI is concerned, both `SmPtr` and `SmItem` are `rawptr`s, but *I* know the difference. Conveniently, `SmItem` can now be easily derefrenced to get the underlying Group without casting.
+
+Having done that, and as much as I am pleased with myself for getting this to work, I do not like that the keys are `u64`s. They are *large*: much larger than any number of groups/indices required. Even in the unlikely event of each tile placed forming its own group, there would be a maximum of 126 groups (2 x 63). Eight bits would be enough to have a unique key for every possible group in the game. Something to optimize later, perhaps?
 
 ## Groups
 
