@@ -312,12 +312,12 @@ bb_make_iter :: proc(bb: Bitboard) -> (it: Bitboard_Iterator) {
 }
 
 // The function
-bb_hexes :: proc(it: ^Bitboard_Iterator) -> (item: Hex, idx: int, ok: bool) {
+bb_iter :: proc(it: ^Bitboard_Iterator) -> (item: Hex, idx: int, ok: bool) {
 	for i in it.next ..< CELL_COUNT {
 		if bb_get_bit(it.bb, i) {
 			item = hex_from_index(i)
+			idx = i
 			it.next = i + 1
-			idx += 1
 			ok = true
 			return
 		}
@@ -328,8 +328,8 @@ bb_hexes :: proc(it: ^Bitboard_Iterator) -> (item: Hex, idx: int, ok: bool) {
 
 // And it is used such:
 bbi := bb_make_iter(bitboard_from_somewhere)
-for hex in bb_hexes(&bbi) {
-	// do something with hex
+for hex, idx in bb_hexes(&bbi) {
+	// do something with this hex or its corresponding index
 }
 ```
 
@@ -625,9 +625,11 @@ game_regen_legal_moves :: proc(game: ^Game) {
 
 The two `TODO`s left are probably the meat of this whole engine. It is clearer to write them out in steps, in English, before encoding them into code.
 
-### Updating the Game State
+## Updating the Game State
 
 The key observation, I think, is that the game state change starts from the where the last move is played. No need for a global search process, but only the exact Hex being played and the surrounding groups.
+
+### `group_section_init`
 
 The simplest, and shortest, game state change that is not a Pass, is a Tile that starts its own Section. This happens in two occasions: the first move, and whenever a Tile is only adjacent to other tiles via its Blank sides. This Tile by definition also starts a new Group. This function assumes it is only called when a move is legal.
 
@@ -663,7 +665,278 @@ if grp, ok := group_section_init(move, game); ok {
 } 
 ```
 
-The second easiest is .... I dunno
+### `group_attach_to_friendlies`
+
+The second easiest to deal with is a Tile that only connects to Groups of its own color. But there are a few variations
+
+- *Extension*: The Tile may only extend one Group
+- *Merge*: The Tile may merge two friendly Groups into one.
+- *Suicide*: The Tile may consume the remaining Liberties of the Group(s) it connects to, Suiciding the whole Group. In which case the newly formed Group is captured (flipped) as a whole, and merged with the surrounding enemy Group(s).
+
+The last case is interesting. Note that Move legality is checked earlier, so on principle, it is *known* that the newly formed enemy Group has at least one Liberty left.
+
+A funny observation here is that it is impossible for a Tile that *only connects to friendlies* to Capture an enemy Group, but it is entirely possible that is causes its own Group to be immediately captured.
+
+An easy check to whether this move is a Suicide is to check whether the new Tile has any Liberties of its own. For example: if it has 2 Connections and is connected to a friendly Group from only one side of the two, and the other Connection is to an empty cell, then it is obviously *not* a Suicide.
+
+Ergo, the procedure for extension or merging is as follows. It turned *way* longer than I expected.
+
+```odin
+@(private)
+group_extend_or_merge :: proc(move: Move, game: ^Game) -> (ok: bool = true) {
+	// Bug tracker
+	tile_liberties_count := card(move.tile & CONNECTION_FLAGS)
+
+	// Friendliness tracker
+	tile_control := move.tile & {.Controller_Is_Host}
+
+	// Scratchpad: Found Groups
+	nbr_friend_grps: [6]Sm_Key
+	nfg_cursor: int
+
+	// Scratchpad: New Liberties
+	new_libs: [6]Hex
+	libs_cursor: int
+
+	for flag in move.tile & CONNECTION_FLAGS {
+		neighbor := move.hex + flag_dir(flag)
+		nbr_tile := board_get_tile(&game.board, neighbor) or_continue
+
+		if tile_is_empty(nbr_tile^) {
+			new_libs[libs_cursor] = neighbor
+			libs_cursor += 1
+		} else if nbr_tile^ & {.Controller_Is_Host} == tile_control {
+			// Same Controller
+			tile_liberties_count -= 1
+
+			// record Group of neighbor tile.
+			key := game.groups_map[hex_to_index(neighbor)]
+			if !slice.contains(nbr_friend_grps[:], key) {
+				nbr_friend_grps[nfg_cursor] = key
+				nfg_cursor += 1
+			}
+		} else {
+			// Different Controller
+			return false
+		}
+
+	}
+	assert(tile_liberties_count >= 0) 	// if this is broken we have a legality bug
+	assert(nfg_cursor > 0)			// This proc should not be called with no friendly neighbors
+	(tile_liberties_count > 0) or_return 	// if this is false then this might be a Suicide
+
+	// == Are we the Baddies?
+	friendly_grps: Slot_Map
+	if tile_control == {} {
+		friendly_grps = game.guest_grps
+	} else {
+		friendly_grps = game.host_grps
+	}
+
+	// == Identify first group
+	blessed_key := nbr_friend_grps[0]
+	assert(slotmap_contains_key(friendly_grps, blessed_key))
+	blessed_grp := slotmap_get(friendly_grps, blessed_key)
+	bb_set_bit(&blessed_grp.tiles, hex_to_index(move.hex))
+
+	// == Merge other groups with first group
+	for i in 1 ..< nfg_cursor {
+		assert(slotmap_contains_key(friendly_grps, nbr_friend_grps[i]))
+		grp := slotmap_remove(friendly_grps, nbr_friend_grps[i])
+		defer free(grp)
+
+		blessed_grp.tiles |= grp.tiles
+
+		// Only if both Groups are in their own Section is the new Group in its own section
+		play_area := PLAY_AREA & (blessed_grp.liberties | grp.liberties)
+		data_area := DATA_AREA & (blessed_grp.liberties & grp.liberties)
+		blessed_grp.liberties = play_area | data_area
+	}
+
+	// == Update liberties
+	bb_unset_bit(&blessed_grp.liberties, hex_to_index(move.hex))
+	for l in 0 ..< libs_cursor {
+		bb_set_bit(&blessed_grp.liberties, hex_to_index(new_libs[l]))
+	}
+
+	// == Update the groupmap
+	bbi := bb_make_iter(blessed_grp.tiles)
+	for _, idx in bb_iter(&bbi) {
+		game.groups_map[idx] = blessed_key
+	}
+
+	// this should be all.
+
+	return
+}
+```
+
+Now, what to do if it *is* a potential suicide? First of all, it is not possible to know whether it is a suicide or not without doing everything already done in `group_extend_or_merge` anyway. If it were a Suicide, the final, collasced Group would have no Liberties, and therefore it would be an easy decision to simply flip its Controller and swap its allegiance.
+
+The problem lies in how to merge it with its capturing Group(s). It needs to be merged to maintain an accurate count of Liberties, as the count of Liberties is clearly being used to test whether it needs to be captured or not!! (Not in *this* move. but in subsequent ones.)
+
+The naïve approach is to iterate over every Tile member of the Group and every Connection of said Tile, and compile a list of opponent-controlled neighbors, then check the Group membership of *those* Tiles, (similarly to how `nbr_friend_grps` is used,) then do the merging routine again, but this time for the opponent.
+
+The *other* naïve approach is to add a third `Bitboard` to `Group` to track its surrounding enemies and just iterate over those.
+
+Both solutions bother me for different reasons. The first seems like a time and CPU cycle waste (as I am already iterating over the same Tile's flags multiple times ..), and the second seems adds an extra knob to keep track of.
+
+## Rethinking Groups
+
+One idea to explore is to change `Group`'s representation entirely, away from Bitboards. (Yes I spent a lot of time talking about Bitboards, and they're really cool, but hear me out). Throughout the program, the state of the game has been tracked through a number of `[CELL_COUNT]` arrays, of variable things, with trivial conversion from a human-readable `Hex` to an index within these arrays. So what's another `[CELL_COUNT]` array? But what would it be an array *of*?
+
+Currently, as far as a Group is concerned, a location can be one of three states: Either a member Tile, a Liberty, or an enemy Connection. That is an enum! More things can be added to it later as needed.
+
+```odin
+Hex_State :: enum u8 {
+	Empty            = 0x00, // numbers chosen for a reason
+	Liberty          = 0x01,
+	Enemy_Connection = 0x11,
+	Member_Tile      = 0x13,
+}
+```
+
+And this how the `Group` using this enum would look like:
+
+```odin
+Rethought_Group :: struct {
+	state:      [CELL_COUNT]Hex_State,
+	extendable: bool, // sadly no clean niche to hide that
+}
+```
+
+Much cleaner! Surprisingly, Odin allows bitwise OR over enumerations.[^7] If the resulting value has no tag assigned, it becomes a `BAD_ENUM_VALUE` and may potentially wreck the program. But if the numbers are assigned appropraitely, it can be made to always have a valid value.
+
+Thinking through this, it is clear that `.Empty` with any other tag should be, well, that other tag. `.Liberty`, being essentially an empty cell as well, with any of the other two tags should produce the other tag. `.Member_Tile` and `.Enemy_Connection` overlap when capturing groups, so Enemies should be converted to Members. Here is the printed `OR` table:
+
+```
+        Empty   Liberty   Enemy   Member
+
+Empty   Empty   Liberty   Enemy   Member
+Liberty	        Liberty   Enemy   Member
+Enemy                     Enemy   Member
+Member                            Member
+```
+Great. Looks good to me. Let's roll with it. This is how `Group` works now. Should I need more states I shall think of other clever numbers to use. Then follow the compiler's erros about missing fields and correct those as needed.
+
+Compiler driven development !!
+
+## Back to Updating Game State
+
+### Back to `group_attach_to_friendlies`
+
+This above change makes the merging process much simpler. It also allowed me to delete the entire `bitboard.odin` file! Simply following the compiler's errors leads me to this version of `group_extend_or_merge`:
+
+```odin
+@(private)
+group_extend_or_merge :: proc(move: Move, game: ^Game) -> (ok: bool = true) {
+	// ----- snip: same as before, for now.
+
+	// == Identify first group
+	blessed_key := nbr_friend_grps[0]
+	assert(slotmap_contains_key(friendly_grps, blessed_key))
+	blessed_grp := slotmap_get(friendly_grps, blessed_key)
+	blessed_grp.state[hex_to_index(move.hex)] = .Member_Tile
+
+	// == Merge other groups with first group
+	for i in 1 ..< nfg_cursor {
+		assert(slotmap_contains_key(friendly_grps, nbr_friend_grps[i]))
+		grp := slotmap_remove(friendly_grps, nbr_friend_grps[i])
+		defer free(grp)
+
+		blessed_grp.state |= grp.state
+		blessed_grp.extendable &= grp.extendable
+	}
+
+	// == Update liberties
+	for l in 0 ..< libs_cursor {
+		blessed_grp.state[hex_to_index(new_libs[l])] |= .Liberty
+	}
+
+	// == Update the groupmap
+	for _, idx in blessed_grp.state {
+		game.groups_map[idx] = blessed_key
+	}
+
+	return
+}
+```
+
+Now, merging groups membership and liberties also merges their enemy connections as well. No additional bookkeeping! The check for potential Suicide earlier can now be removed, and writing this (larger and larger) procedure can continue:
+
+```odin
+	// ----- snip: same as before + declaring pointers to enemy groups
+
+	// == Update liberties
+	for l in 0 ..< libs_cursor {
+		blessed_grp.state[hex_to_index(new_libs[l])] |= .Liberty
+	}
+
+	if tile_liberties_count == 0      // Potential Suicide
+	   && group_life(blessed_grp) == 0 // Definite Suicide
+	{
+		// no insertion into the enemy slotmap .. there is merging to be done!
+		cursed_grp := slotmap_remove(friendly_grps, blessed_key)
+		defer free(cursed_grp)
+
+		// Scratchpad 
+		nbr_enemy_grps := make([dynamic]Sm_Key)
+		defer delete(nbr_enemy_grps)
+
+		for loc, idx in cursed_grp.state {
+			#partial switch loc {
+			case .Member_Tile:
+				tile_flip(&game.board[idx])
+			case .Enemy_Connection:
+				key := game.groups_map[idx]
+				if !slice.contains(nbr_enemy_grps[:], key) {
+					append(&nbr_enemy_grps, key)
+				}
+			}
+		}
+		// == same steps as before
+		assert(len(nbr_enemy_grps) > 0) // or there is Oscillation
+		blessed_key = nbr_enemy_grps[0]
+
+		assert(slotmap_contains_key(enemy_grps, blessed_key))
+		blessed_grp = slotmap_get(enemy_grps, blessed_key)
+
+		blessed_grp.state |= cursed_grp.state
+
+		for i in 1 ..< len(nbr_enemy_grps) {
+			assert(slotmap_contains_key(enemy_grps, nbr_enemy_grps[i]))
+			grp := slotmap_remove(enemy_grps, nbr_enemy_grps[i])
+			defer free(grp)
+
+			blessed_grp.state |= grp.state
+		}
+
+		// check if blessed_grp is extendable
+		extendable := true
+		for loc in blessed_grp.state {
+			if loc == .Enemy_Connection {
+				extendable = false
+				break
+			}
+		}
+		blessed_grp.extendable = extendable
+	}
+
+	// == Update the groupmap
+	for _, idx in blessed_grp.state {
+		game.groups_map[idx] = blessed_key
+	}
+
+	return
+}
+```
+
+Change the procedure's name to `group_attach_to_friendlies`, and *now* it is done. All this merging logic should really be refactored and `DRY`'d, but I will let it be for now. This one procedure end up about 130 lines of code.
+
+### `group_attach_to_enemies`
+
+Similarly to attaching to friendlies, this move can either be a nothing, a capture, or a suicide.
+
 
 
 ---
@@ -679,3 +952,5 @@ The second easiest is .... I dunno
 [^5]: It is Oscillation because the resulting Group has no Liberties, and therefore has no clear Controller, so it *oscillates* between both colors. This is way the Blank tile has no role in the game: it automatically oscillates. 
 
 [^6]: Technically, only a record of whether the last move *was* a pass is needed, but `last_move` is semantically clearer than a `last_move_was_a_pass` (or `pass_ends_the_game` or `the_end_is_nigh`) boolean or a `player_who_last_made_a_move` enum field. It may also be useful to highlight the last move in a GUI.
+
+[^7]: Rust would *totally* yell at me. 
