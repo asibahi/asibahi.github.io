@@ -261,21 +261,23 @@ In chess implementations: There is a bitboard (read: a `u64`) to mark where all 
 
 The other advantage of bitboards is that, since they are just bits, they have bit operations. With a bitboard showing the white pieces are and a bitboard showing where black's pieces can move next turn: just `AND` them together and there is now a new bitboard of which pieces of white are under attack. They are small, simple integers, and operating on them is as easy as integers. 
 
-Unfortunately, however, the Dominions board is decidedly *not* 64 cells, or any such convenient number. It is 217 cells. It would be possible to represent the whole board with a 217bit integer, should it exist, but the largest bit set Odin provides is 128 bits. But have no fear! An array of 7 bit sets can solve the problem, as 7 `u32` integers can fit our need 217 bits and more (namely 224 bits). This is as small as can be. Thanks to Odin's array programming (which is also taken advantage of for Hex math), using bitwise operations on these bitboards is as easy as they are on usual bitsets.
+Unfortunately, however, the Dominions board is decidedly *not* 64 cells, or any such convenient number. It is 217 cells. It would be possible to represent the whole board with a 217bit integer, should it exist, but the largest bit set Odin provides is 128 bits. But have no fear! An array of 7 bit sets can solve the problem, as 7 `u32` integers can fit our need 217 bits and more (namely 224 bits). This is as small as can be. Thanks to Odin's array programming (which is also taken advantage of for Hex math), using bitwise operations on these bitboards is as easy as they are on usual bitsets. The additional 7 bits can be used for metadata, as well.
 
 ```odin
 Bitboard :: distinct [7]bit_set[0 ..< 32;u32] // 7 * 32 = 224
+PLAY_AREA: Bitboard : {~{}, ~{}, ~{}, ~{}, ~{}, ~{}, ~{25, 26, 27, 28, 29, 30, 31}}
+DATA_AREA: Bitboard : {{}, {}, {}, {}, {}, {}, {25, 26, 27, 28, 29, 30, 31}} // To use the extra bits for metadata
 
 // helper procedure for common maths 
 @(private = "file")
 bit_to_col_row :: proc(bit: int) -> (col, row: int) {
-	assert(0 <= bit && bit < CELL_COUNT)
 	col = bit % 32
 	row = bit / 32
 	return
 }
 
 bb_set_bit :: proc(bb: ^Bitboard, bit: int) {
+	assert(0 <= bit && bit < CELL_COUNT) // assert here to allow an unchecked version for meta data
 	col, row := bit_to_col_row(bit)
 	bb^[row] |= {col}
 }
@@ -305,7 +307,7 @@ Bitboard_Iterator :: struct {
 	next: int,
 }
 bb_make_iter :: proc(bb: Bitboard) -> (it: Bitboard_Iterator) {
-	it.bb = bb
+	it.bb = bb & PLAY_AREA
 	return
 }
 
@@ -435,8 +437,9 @@ Each group keeps track of its location (which hexes it occupies) and its liberti
 
 ```odin
 bb_card :: proc(bb: Bitboard) -> (ret: int) {
+	temp := bb & PLAY_AREA
 	#unroll for i in 0 ..< 7 { // premature optimization, perhaps?
-		ret += card(bb[i])
+		ret += card(temp[i])
 	}
 	return
 }
@@ -630,9 +633,7 @@ The simplest, and shortest, game state change that is not a Pass, is a Tile that
 
 ```odin
 @(private)
-group_section_init :: proc(move: Move, game: ^Game) -> (ret: ^Group, ok: bool = true) {
-	ret = new(Group) // store it on the heap. TEMPORAL SAFETY
-	
+group_section_init :: proc(move: Move, game: ^Game) -> (ret: Group, ok: bool = true) {
 	// Check that all Connected sides connect to empty tiles.
 	// AND find Liberties
 	for flag in move.tile & CONNECTION_FLAGS {
@@ -645,7 +646,8 @@ group_section_init :: proc(move: Move, game: ^Game) -> (ret: ^Group, ok: bool = 
 		}
 	}
 
-	bb_set_bit(&ret.tiles, hex_to_index(move.hex) )
+	bb_set_bit(&ret.tiles, hex_to_index(move.hex))
+	bb_set_bit_unchecked(&ret.liberties, CELL_COUNT) // Special location for whether it is own section
 
 	return
 }
@@ -655,6 +657,7 @@ And in `game_make_move` :
 
 ```odin
 if grp, ok := group_section_init(move, game); ok {
+	grp := new_clone(grp)
 	key := slotmap_insert(game.host_grps, grp)
 	game.groups_map[hex_to_index(move.hex)] = key
 } 
