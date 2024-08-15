@@ -7,11 +7,15 @@ draft = true
 
 In an escape from the worries of life, I have been reading recently into the [Odin programming language](https://odin-lang.org). I wanted to learn something that is closer to the metal than Rust, and Odin seems nice.
 
-For a project to do with the language, I figured I would build a library of sorts for the abstract boqard game [Domnions, by Christian Freeling](https://mindsports.nl/index.php/the-pit/526-dominions). ([Sensei's Library link](https://senseis.xmp.net/?Dominions)). The game can be described as a Go variant with distinct pieces (as opposed to Go itself where every "piece" is identical.
+For a project to do with the language, I figured I would build a library of sorts for the abstract board game [Domnions, by Christian Freeling](https://mindsports.nl/index.php/the-pit/526-dominions). ([Sensei's Library link](https://senseis.xmp.net/?Dominions)). The game can be described as a Go variant with distinct pieces (as opposed to Go itself where every "piece" is identical.
 
-The game is weird. It is much less known than Freeling's other games like Havannah (for which I wrote [an implementation for in Rust](https://github.com/asibahi/w9l)) and Grand Chess (which I built a physical board for). Even Freeling himself does not put much stock into it, and is more interested in the tile set itself (which he calls [the China Labyrinth](https://mindsports.nl/index.php/puzzles/tilings/china-labyrinth/), even though they have nothing to do with China) than the game. He made other games with the tile set which you can find by browsing his site.
+The game is *weird*. It is much less known than Freeling's other games like Havannah (for which I wrote [an implementation for in Rust](https://github.com/asibahi/w9l)) and Grand Chess (which I designed and built a physical set for). Even Freeling himself does not put much stock into it, and is more interested in the tile set itself (which he calls [the China Labyrinth](https://mindsports.nl/index.php/puzzles/tilings/china-labyrinth/), even though they have nothing to do with China) than the game. He made other games with the tile set which you can find by browsing his site.
 
-I am writing this post first as a way to organize my thoughts on how to represent the game in code. It is a semi organized, semi-chronologically-sorted brain dump: I am writing it as I iterate over the code. I will be talking mostly about how to represent the game in code form, leaving the rules for later.
+![A game in progress of Dominions](dominions.png)
+
+This is the sample game Freeling posted on his website.
+
+I am writing this post as a way to organize my thoughts on how to represent the game in code. It is a semi organized, semi-chronologically-sorted brain dump: I am writing it as I iterate over the code. I will be talking mostly about how to represent the game in code form, leaving the rules for later.
 
 ## Tiles
 
@@ -508,25 +512,25 @@ So far, I made no mention of the game's rules, only talking about its physical p
 ### Tiles
 
 - Each **Tile** has a specific set of sides it can connect to, encoded, visually, on the Tile itself.
-- Each Tile *must* match its neighboring Tiles in connections. **Connected** sides must match and **Blank** sides must match.
-- Board edges are cosidered neutral Blanks.
+- Each Tile *must* match its neighboring Tiles in connections. **Connected** sides must match and **Separated** sides must match.
+- Board edges are cosidered neutral Separateds.
 
 ### Groups
 
-- A **Group** is one or more Tiles of the same color (Controller) that are connected together. Adjacencies on Blank sides do not count.
+- A **Group** is one or more Tiles of the same color (Controller) that are connected together. Adjacencies on Separated sides do not count.
 - The **Liberties** of a Group are its Connected sides border empty cells.
 - If a Group loses its last Liberty, it is captured, and all its tiles are flipped (switched Controller).
 
 ### The Structure
 
 - The **Structure** is the collective name of all the connections together, in the whole board, *regardless of Controller*.
-- Disconnected parts of the Structure are called **Sections**, created as Tiles are placed on Blank adjacencies. A single Section can include multiple Groups (but a Group cannot belong to multiple Sections).
+- Disconnected parts of the Structure are called **Sections**, created as Tiles are placed on Separated adjacencies. A single Section can include multiple Groups (but a Group cannot belong to multiple Sections).
 
 ### Placement
 
 *Finally*
 
-- Bears repeating: A Tile can only be placed where it matches its neighboars in Connected and Blank sides.
+- Bears repeating: A Tile can only be placed where it matches its neighboars in Connected and Separated sides.
 - Firstly, the Guest, first player, starts by placing any Tile anywhere.
 - Afterwards, a Tile can only be placed *adjacent to an enemy Tile*, with one exception.
 - A Tile can be placed where it is not adjacent to an enemy Tile *if and only if* it is extending a Group that is a whole Section.
@@ -633,7 +637,7 @@ The key observation, I think, is that the game state change starts from the wher
 
 ### `group_section_init`
 
-The simplest, and shortest, game state change that is not a Pass, is a Tile that starts its own Section. This happens in two occasions: the first move, and whenever a Tile is only adjacent to other tiles via its Blank sides. This Tile by definition also starts a new Group. This function assumes it is only called when a move is legal.
+The simplest, and shortest, game state change that is not a Pass, is a Tile that starts its own Section. This happens in two occasions: the first move, and whenever a Tile is only adjacent to other tiles via its Separated sides. This Tile by definition also starts a new Group. This function assumes it is only called when a move is legal.
 
 ```odin
 @(private)

@@ -8,9 +8,15 @@
     {% if section.pages %}
     {% for year, posts in section.pages | group_by(attribute="year") %}
     <h2>{{ year }}</h2>
-    <ul>
+    <ul class = "index">
         {% for post in posts %}
-        <li><a href="{{ post.permalink }}">{{ post.title }}</a></li>
+        <li {% if post.extra.arabic %} dir="rtl" {% endif %}>
+            <a href="{{ post.permalink }}">{{ post.title }}</a>
+            <small class="secondary">
+                - {{post.date}}
+                {% if post.description %}<br>{{ post.description }}{% endif %}
+            </small>
+        </li>
         {% endfor %}
     </ul>
     {% endfor %}

@@ -5,11 +5,13 @@
 
 {% block header %}
 <header class="space">
-    {% if page.extra.arabic %}
-    <a href="{{ config.base_url }}">&RightArrow; العودة</a>
-    {% else %}
-    <a href="{{ config.base_url }}">&LeftArrow; Home</a>
-    {% endif %}
+    <a href="{{ config.base_url }}">
+        {% if page.extra.arabic %}
+        &RightArrow;
+        {% else %}
+        &LeftArrow;
+        {% endif %}
+    </a>
 </header>
 {% endblock header %}
 
