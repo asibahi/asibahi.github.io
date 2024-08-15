@@ -1,6 +1,8 @@
 +++
-title = "Dominions with Odin"
+title = "The Garden of Odin"
+description = "An Odin implementation of an abstract board game."
 draft = true
+# extra.arabic = true
 +++
 
 In an escape from the worries of life, I have been reading recently into the [Odin programming language](https://odin-lang.org). I wanted to learn something that is closer to the metal than Rust, and Odin seems nice.
