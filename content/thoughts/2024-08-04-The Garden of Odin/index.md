@@ -404,7 +404,7 @@ pub unsafe extern "C" fn slotmap_remove(sm: SmPtr, key: u64) -> SmItem {
 }
 ```
 
-And after compiling this to a `staticlib`, we do this from the Odin side:
+And after compiling this to a `staticlib`, do this from the Odin side:
 
 ```odin
 foreign import slotmap "deps/slotmap/libslotmap.a"
@@ -727,8 +727,8 @@ group_extend_or_merge :: proc(move: Move, game: ^Game) -> (ok: bool = true) {
 		}
 
 	}
-	assert(tile_liberties_count >= 0) 	// if this is broken we have a legality bug
-	assert(nfg_cursor > 0)			// This proc should not be called with no friendly neighbors
+	assert(tile_liberties_count >= 0, "if this is broken there is a legality bug")
+	assert(nfg_cursor > 0, "This proc should not be called with no friendly neighbors")
 	(tile_liberties_count > 0) or_return 	// if this is false then this might be a Suicide
 
 	// == Are we the Baddies?
@@ -941,7 +941,277 @@ Change the procedure's name to `group_attach_to_friendlies`, and *now* it is don
 
 ### `group_attach_to_enemies`
 
-Similarly to attaching to friendlies, this move can either be a nothing, a capture, or a suicide.
+Similarly to attaching to friendlies, this move can either be a nothing, a capture, or a suicide. The logic of the `friendlies` procedure might need to be repeated in this one. And the checks done and the data collected would also need to be repeated. 
+
+So why separate it at all? The idea was it would simplify handling, but it does not seem to do that. So, rethinking the move handling, allow me to try summarising the logic that *actually* needs to be done (this was revised in tandem with writing the code in the next section):
+
+1. Create these trackers:
+	1. Liberties of the newly placed tile,
+	2. Neighboring, connected Friendlies (tracking Groups), and
+	3. Neighboring, connected Enemies (tracking locations).
+2. Iterate over all Connected Sides of the newly placed tile, and fill in the trackers as needed,
+3. For every Friendly connected Group, merge them together. (If none are connected, the Tile starts its own Group with marked Liberties and Enemy neighbors.) Mark this group as "Blessed".
+4. Iterate over neighboring Enemy Groups, if any have a Liberty count of 0: [^8]
+	1. They are flipped and merged with the Blessed Group.
+	2. Iterate over connections of the Blessed Group, and merge with it any friendly Groups found.
+	3. Move is over. (This is because we already filtered for legal moves, or a check for Oscillation would be needed.)
+5. The Blessed Group is checked for Liberty count. If it is 0, it is captured (flipped) and merged with its surrounding Enemy Groups.
+6. Done
+
+Note that I am assuming here that this is not a recursive operation. Here is the assumption: A new Tile placement that has no liberties *but* takes away the last liberty of an enemy Group captures it. There is no need to check if the surrounding friendly Groups (that surrounded the surrounding Enemy Groups) would also have no Liberties, because if they had no Liberties they would not exist! A lot of weight is placed right now on the correctness of `game_regen_legal_moves`, which is still delayed for later.
+
+### `game_make_move_inner` - Second Draft
+
+A monstrous 230-ish lines of code which could really use some refactoring. This drags on but I made my best to comment my thoughts throughout.
+
+```odin
+@(private)
+game_make_move_inner :: proc(move: Move, game: ^Game) {
+	// Bug tracker
+	tile_liberties := card(move.tile & CONNECTION_FLAGS)
+	tile_liberties_countdown := tile_liberties
+
+	// Friendliness tracker
+	tile_control := move.tile & {.Controller_Is_Host}
+
+	// Scratchpad: Found friendly Groups
+	nbr_friend_grps: [6]Sm_Key
+	nfg_counter: uint
+
+	// Scratchpad: Found Enemy Groups
+	nbr_enemy_tiles: [6]Hex
+	net_counter: uint
+
+	// Scratchpad: New Liberties
+	new_libs: [6]Hex
+	libs_counter: uint
+
+	for flag in move.tile & CONNECTION_FLAGS {
+		neighbor := move.hex + flag_dir(flag)
+		nbr_tile := board_get_tile(&game.board, neighbor) or_continue
+
+		if tile_is_empty(nbr_tile^) {
+			new_libs[libs_counter] = neighbor
+			libs_counter += 1
+		} else if nbr_tile^ & {.Controller_Is_Host} == tile_control {
+			// Same Controller
+			tile_liberties_countdown -= 1
+
+			// record Group of neighbor tile.
+			key := game.groups_map[hex_to_index(neighbor)]
+			if !slice.contains(nbr_friend_grps[:], key) {
+				nbr_friend_grps[nfg_counter] = key
+				nfg_counter += 1
+			}
+		} else {
+			// Different Controller
+			tile_liberties_countdown -= 1
+
+			nbr_enemy_tiles[net_counter] = neighbor
+			net_counter += 1
+		}
+	}
+
+	assert(tile_liberties_countdown >= 0, "if this is broken there is a legality bug")
+
+	// == Are we the Baddies?
+	friendly_grps: Slot_Map
+	enemy_grps: Slot_Map
+	if tile_control == {} {
+		// Guest Controller
+		friendly_grps = game.guest_grps
+		enemy_grps = game.host_grps
+	} else {
+		// Host Controller
+		friendly_grps = game.host_grps
+		enemy_grps = game.guest_grps
+	}
+
+	// The placed Tile's Group
+	blessed_key: Sm_Key
+	blessed_grp: Sm_Item
+	if nfg_counter == 0 {
+		blessed_grp = new(Group)
+		blessed_key = slotmap_insert(friendly_grps, blessed_grp)
+
+		if net_counter == 0 {
+			blessed_grp.extendable = true
+		}
+	} else {
+		blessed_key = nbr_friend_grps[0]
+		assert(
+			slotmap_contains_key(friendly_grps, blessed_key),
+			"Friendly slotmap does not have friendly Key",
+		)
+		blessed_grp = slotmap_get(friendly_grps, blessed_key)
+
+		// == Merge other groups with blessed group
+		for i in 1 ..< nfg_counter {
+			assert(
+				slotmap_contains_key(friendly_grps, nbr_friend_grps[i]),
+				"Friendly slotmap does not have friendly Key",
+			)
+			temp_grp := slotmap_remove(friendly_grps, nbr_friend_grps[i])
+			defer free(temp_grp)
+
+			blessed_grp.state |= temp_grp.state
+			blessed_grp.extendable &= temp_grp.extendable
+		}
+	}
+	blessed_grp.state[hex_to_index(move.hex)] |= .Member_Tile
+
+	defer {
+		// == Update the groupmap
+		for _, idx in blessed_grp.state {
+			game.groups_map[idx] = blessed_key
+		}
+	}
+
+	// == Update liberties
+	for i in 0 ..< libs_counter {
+		blessed_grp.state[hex_to_index(new_libs[i])] |= .Liberty
+	}
+	// == Update Enemy neighbors for blessed group
+	for i in 0 ..< net_counter {
+		blessed_grp.state[hex_to_index(nbr_enemy_tiles[i])] |= .Enemy_Connection
+	}
+
+	// == register surrounding Enemy Groups of blessed Group
+	surrounding_enemy_grps := make([dynamic]Sm_Key)
+	defer delete(surrounding_enemy_grps)
+
+	for slot, idx in blessed_grp.state {
+		(slot == .Enemy_Connection) or_continue
+		key := game.groups_map[idx]
+		if !slice.contains(surrounding_enemy_grps[:], key) {
+			append(&surrounding_enemy_grps, key)
+		}
+	}
+
+	// == if there are no surrounding enemy groups there is nothing more to do
+	if len(surrounding_enemy_grps) == 0 {
+		assert(
+			group_life(blessed_grp) > 0,
+			"newly formed groups must have liberites or enemy connections",
+		)
+		blessed_grp.extendable = true
+		return
+	}
+
+	// == these are the friendly groups that surround the dead enemy groups.
+	level_2_surrounding_friendlies := make([dynamic]Sm_Key)
+	defer delete(level_2_surrounding_friendlies)
+
+	// == go over surrounding enemy groups to see if they're dead.
+	capture_occurance := false
+	for key in surrounding_enemy_grps {
+		assert(slotmap_contains_key(enemy_grps, key), "Enemy slotmap does not have enemy Key")
+		temp_grp := slotmap_get(enemy_grps, key)
+		temp_grp.state[hex_to_index(move.hex)] |= .Enemy_Connection // this is probably correct
+
+		// Enemy Group is dead
+		(group_life(temp_grp) == 0) or_continue
+		capture_occurance = true
+
+		cursed_grp := slotmap_remove(enemy_grps, key)
+		defer free(cursed_grp)
+
+		for slot, idx in cursed_grp.state {
+			#partial switch slot {
+			case .Member_Tile:
+				tile_flip(&game.board[idx])
+			case .Enemy_Connection:
+				key := game.groups_map[idx]
+				if !slice.contains(level_2_surrounding_friendlies[:], key) {
+					append(&level_2_surrounding_friendlies, key)
+				}
+			}
+		}
+
+		// CAPTURE
+		blessed_grp.state |= cursed_grp.state
+		blessed_grp.extendable &= cursed_grp.extendable
+	}
+
+	// == merge level 2 surrounding friendlies into blessed group
+	for key in level_2_surrounding_friendlies {
+		assert(slotmap_contains_key(friendly_grps, key))
+		temp_grp := slotmap_remove(friendly_grps, key)
+		defer free(temp_grp)
+
+		blessed_grp.state |= temp_grp.state
+		blessed_grp.extendable &= temp_grp.extendable
+	}
+
+	// == if there is a capture, it is done.
+	if capture_occurance do return
+
+	// == if blessed group's liberties larger than 0, it is done capturing
+	if group_life(blessed_grp) > 0 do return
+
+	// == Now the blessed group has converted.
+
+	cursed_grp := slotmap_remove(friendly_grps, blessed_key)
+	defer free(cursed_grp)
+
+	new_family := make([dynamic]Sm_Key)
+	defer delete(new_family)
+
+	for loc, idx in blessed_grp.state {
+		#partial switch loc {
+		case .Member_Tile:
+			tile_flip(&game.board[idx])
+		case .Enemy_Connection:
+			key := game.groups_map[idx]
+			if !slice.contains(new_family[:], key) {
+				append(&new_family, key)
+			}
+		}
+	}
+
+	assert(len(new_family) > 0, "Oscillation")
+
+	blessed_key = new_family[0]
+	assert(slotmap_contains_key(enemy_grps, blessed_key), "Enemy key is not in enemy map")
+
+	blessed_grp = slotmap_get(enemy_grps, blessed_key)
+	blessed_grp.state |= cursed_grp.state
+
+	for i in 1 ..< len(new_family) {
+		assert(slotmap_contains_key(enemy_grps, new_family[i]))
+		temp_grp := slotmap_remove(enemy_grps, new_family[i])
+		defer free(temp_grp)
+
+		blessed_grp.state |= temp_grp.state
+	}
+
+	// check if new blessed group is extendable
+	extendable := true
+	for loc in blessed_grp.state {
+		if loc == .Enemy_Connection {
+			extendable = false
+			break
+		}
+	}
+	blessed_grp.extendable = extendable
+
+	return
+}
+```
+
+## `game_regen_legal_moves`
+
+This is the current state of this function, which a lot is riding on:
+
+```odin
+@(private)
+game_regen_legal_moves :: proc(game: ^Game) {
+	clear(&game.legal_moves)
+
+	// todo: build them again
+}
+```
+
 
 
 
@@ -959,4 +1229,6 @@ Similarly to attaching to friendlies, this move can either be a nothing, a captu
 
 [^6]: Technically, only a record of whether the last move *was* a pass is needed, but `last_move` is semantically clearer than a `last_move_was_a_pass` (or `pass_ends_the_game` or `the_end_is_nigh`) boolean or a `player_who_last_made_a_move` enum field. It may also be useful to highlight the last move in a GUI.
 
-[^7]: Rust would *totally* yell at me. 
+[^7]: Rust would *totally* yell at me. Then tell me to implement the trait to define the behavior myself.
+
+[^8]: Freeling does not specify in which order captures are processed. I am assuming here the order is the same as Go. Anyway, all this needs to be verified later once (if?) the engine is implemented.
