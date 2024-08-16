@@ -63,7 +63,7 @@ Tile_Flag :: enum u8 {
 Tile :: distinct bit_set[Tile_Flag;u8]
 ```
 
-The game starts with 126 unique tiles. Guest starts with the tiles `0b00_000_001` to `0b00_111_111`. Host starts with the tiles `0b11_000_001` to `0b11_111_111`. The highest bit, can flip during the game.
+The game starts with 126 unique tiles. Guest starts with the tiles `0b00_000_001` to `0b00_111_111` (or neatly in Octal: `0o001` to `0o077`). Host starts with the tiles `0b11_000_001` to `0b11_111_111` (`0o301` to `0o377`). The highest bit may flip during the game.
 
 ```odin
 // ^ is the pointer operator in Odin.
@@ -157,8 +157,8 @@ Hand :: distinct [HAND_SIZE]Tile
 
 hands_init :: proc() -> (guest: Hand, host: Hand) {
 	for i in 0 ..< u8(HAND_SIZE) {
-		guest[i] = transmute(Tile)(i + 0b00_000_001)
-		host[i]  = transmute(Tile)(i + 0b11_000_001)
+		guest[i] = transmute(Tile)(i + 0o001)
+		host[i]  = transmute(Tile)(i + 00301)
 	}
 
 	return
@@ -253,13 +253,13 @@ Move :: struct {
 }
 ```
 
-This misses one big thing: Groups. Dominions is a game of territory, based on Go. Tiles together make Groups. Groups have libertiesm which they live and die of. Groups capture other Groups. The winner is the player with bigger Groups. Groups are importamt.
+This misses one big thing: Groups. Dominions is a game of territory, based on Go. Tiles together make Groups. Groups have liberties, which they live and die of. Groups capture other Groups. The winner is the player with bigger Groups. Groups are importamt.
 
 ## Bitboards
 
 Before talking about Groups, [Bitboards](https://en.wikipedia.org/wiki/Bitboard) warrant an introduction.
 
-Bitboards are, at their core, based on a simple observations: a chessboard has 64 squaresm and a `u64` has 64 bits. By tying each bit address to a specific square, *any* binary value can be mapped.
+Bitboards are, at their core, based on a simple observations: a chessboard has 64 squares, and a `u64` has 64 bits. By tying each bit address to a specific square, *any* binary value can be mapped.
 
 In chess implementations: There is a bitboard (read: a `u64`) to mark where all the White pieces are. There is another bitboard to mark where all the squares the Queen sees are.
 
@@ -332,7 +332,7 @@ bb_iter :: proc(it: ^Bitboard_Iterator) -> (item: Hex, idx: int, ok: bool) {
 
 // And it is used such:
 bbi := bb_make_iter(bitboard_from_somewhere)
-for hex, idx in bb_hexes(&bbi) {
+for hex, idx in bb_iter(&bbi) {
 	// do something with this hex or its corresponding index
 }
 ```
