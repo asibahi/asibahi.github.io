@@ -612,9 +612,20 @@ game_make_move :: proc(game: ^Game, candidate: Maybe(Move)) -> bool {
 		return true
 	}
 
+	active_hand: ^Hand
+
+	switch game.to_play {
+	case .Guest:
+		active_hand = &game.guest_hand
+	case .Host:
+		active_hand = &game.host_hand
+	}
+
 	// Make move. Already known to be legal!!
-	hand_tile, _ := hand_remove_tile(active_hand, move.tile)
+	hand_tile, removed := hand_remove_tile(active_hand, move.tile)
+	assert(removed) // but verify
 	game.board[hex_to_index(move.hex)] = hand_tile
+	move.tile = hand_tile // might be superfluous, but just to ascertain the Owner flags are set correctly
 
 	// TODO: update game state
 
@@ -860,8 +871,8 @@ group_extend_or_merge :: proc(move: Move, game: ^Game) -> (ok: bool = true) {
 	}
 
 	// == Update the groupmap
-	for _, idx in blessed_grp.state {
-		game.groups_map[idx] = blessed_key
+	for slot, idx in blessed_grp.state {
+		if slot == .Member_Tile do game.groups_map[idx] = blessed_key
 	}
 
 	return
@@ -929,9 +940,10 @@ Now, merging groups membership and liberties also merges their enemy connections
 	}
 
 	// == Update the groupmap
-	for _, idx in blessed_grp.state {
-		game.groups_map[idx] = blessed_key
+	for slot, idx in blessed_grp.state {
+		if slot == .Member_Tile do game.groups_map[idx] = blessed_key
 	}
+	
 
 	return
 }
@@ -960,13 +972,13 @@ So why separate it at all? The idea was it would simplify handling, but it does 
 
 Note that I am assuming here that this is not a recursive operation. Here is the assumption: A new Tile placement that has no liberties *but* takes away the last liberty of an enemy Group captures it. There is no need to check if the surrounding friendly Groups (that surrounded the surrounding Enemy Groups) would also have no Liberties, because if they had no Liberties they would not exist! A lot of weight is placed right now on the correctness of `game_regen_legal_moves`, which is still delayed for later.
 
-### `game_make_move_inner` - Second Draft
+### `game_update_state_inner` - Second Draft
 
 A monstrous 230-ish lines of code which could really use some refactoring. This drags on but I made my best to comment my thoughts throughout.
 
 ```odin
 @(private)
-game_make_move_inner :: proc(move: Move, game: ^Game) {
+game_update_state_inner :: proc(move: Move, game: ^Game) {
 	// Bug tracker
 	tile_liberties := card(move.tile & CONNECTION_FLAGS)
 	tile_liberties_countdown := tile_liberties
@@ -1062,8 +1074,8 @@ game_make_move_inner :: proc(move: Move, game: ^Game) {
 
 	defer {
 		// == Update the groupmap
-		for _, idx in blessed_grp.state {
-			game.groups_map[idx] = blessed_key
+		for slot, idx in blessed_grp.state {
+			if slot == .Member_Tile do game.groups_map[idx] = blessed_key
 		}
 	}
 
