@@ -2,7 +2,6 @@
 title = "The Garden of Odin"
 description = "An Odin implementation of an abstract board game."
 draft = true
-# extra.arabic = true
 +++
 
 In an escape from the worries of life, I have been reading recently into the [Odin programming language](https://odin-lang.org). I wanted to learn something that is closer to the metal than Rust, and Odin seems nice.
@@ -100,7 +99,6 @@ board_get_tile :: proc(back: ^[CELL_COUNT]Tile, hex: Hex) -> (^Tile, bool) {
 	for r_idx in 0 ..< r {
 		r_len += 2 * int(N) + 1 - abs(int(N - r_idx))
 	}
-	
 
 	idx := r_len + int(q - max(0, N - r))
 	return &back[idx], true
@@ -736,7 +734,6 @@ group_extend_or_merge :: proc(move: Move, game: ^Game) -> (ok: bool = true) {
 			// Different Controller
 			return false
 		}
-
 	}
 	assert(tile_liberties_count >= 0, "if this is broken there is a legality bug")
 	assert(nfg_cursor > 0, "This proc should not be called with no friendly neighbors")
@@ -943,7 +940,6 @@ Now, merging groups membership and liberties also merges their enemy connections
 	for slot, idx in blessed_grp.state {
 		if slot == .Member_Tile do game.groups_map[idx] = blessed_key
 	}
-	
 
 	return
 }
