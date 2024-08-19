@@ -157,6 +157,7 @@ h5,
 h6 {
     text-align: start;
     line-height: 1.25;
+
     code {
         font-size: inherit;
     }
@@ -171,5 +172,6 @@ h6 {
 @media all and (max-width: 800px) {
     body {
         padding: 1em 1em;
+        hyphens: auto;
     }
 }
