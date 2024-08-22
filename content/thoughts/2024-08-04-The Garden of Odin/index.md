@@ -10,9 +10,11 @@ For a project to do with the language, I figured I would build a library of sort
 
 The game is *weird*. It is much less known than Freeling's other games like Havannah (for which I wrote [an implementation for in Rust](https://github.com/asibahi/w9l)) and Grand Chess (which I designed and built a physical set for). Even Freeling himself does not put much stock into it, and is more interested in the tile set itself (which he calls [the China Labyrinth](https://mindsports.nl/index.php/puzzles/tilings/china-labyrinth/), even though they have nothing to do with China) than the game. He made other games with the tile set which you can find by browsing his site.
 
-![A game in progress of Dominions](dominions.png)
+In code and my handwirtten notes, I call the tile set **Bustan**: Arabic for Garden (hence the name of this Article). Variety, branches, paths, and fences all make gardens seem like an appropriate metaphor for what is going on.
 
-This is the sample game Freeling posted on his website.
+This is the sample game Freeling posted on his website:
+
+![A game in progress of Dominions](dominions.png)
 
 I am writing this post as a way to organize my thoughts on how to represent the game in code. It is a semi organized, semi-chronologically-sorted brain dump: I am writing it as I iterate over the code. I will be talking mostly about how to represent the game in code form, leaving the rules for later.
 
