@@ -972,7 +972,7 @@ Note that I am assuming here that this is not a recursive operation. Here is the
 
 ### `game_update_state_inner` - Second Draft
 
-A monstrous 230-ish lines of code which could really use some refactoring. This drags on but I made my best to comment my thoughts throughout.
+A monstrous 230-ish lines of code which could really use some refactoring. This drags on but I made my best to comment my thoughts throughout. Written without Tests, as I don't actually know *how* to test this yet
 
 ```odin
 @(private)
@@ -1209,6 +1209,8 @@ game_update_state_inner :: proc(move: Move, game: ^Game) {
 }
 ```
 
+I attempted refactoring some of it out but I am not sure the result is necessarily better. I also used the `core:container/small_array` library (from the Odin core lib) to smooth some of the logic.
+
 ## `game_regen_legal_moves`
 
 This is the current state of this function, which a lot is riding on:
@@ -1221,6 +1223,124 @@ game_regen_legal_moves :: proc(game: ^Game) {
 	// todo: build them again
 }
 ```
+
+This is perhaps an easier problem than it presented to me at first. The rules have a harsh restriction to placement: any Tile placed MUST be placed next to an enemy Tile, unless it extends a Group which makes its own Section (which is already being tracked by the `extendable` field in `Group`. Assuming the logic, of course, is correct.)
+
+The naïve, crude approach is as follows: Iterate over every empty `Hex`, and if it has an enemy neighbor, *or* if it has a friendly neighbor that is part of an extendable Group *and* it is that Group's liberty, add it to the candidates. Then for each `Hex` of the candidates, iterate over the friendly `Hand`, and add a `Move` where the `Tile` fits. There might be a more efficient way but this will do for now.
+
+(Yes this does not take Oscillation into account, yet?)
+
+```odin
+game_regen_legal_moves :: proc(game: ^Game) {
+	clear(&game.legal_moves)
+
+	// == Are we the Baddies?
+	friendly_grps: Slot_Map
+	friendly_hand: ^Hand
+	enemy_grps: Slot_Map
+
+	switch game.to_play {
+	case .Guest:
+		friendly_grps = game.guest_grps
+		friendly_hand = &game.guest_hand
+		enemy_grps    = game.host_grps
+	case .Host:
+		friendly_grps = game.host_grps
+		friendly_hand = &game.host_hand
+		enemy_grps    = game.guest_grps
+	}
+
+	// get the hexes allowed to be played in
+	playable_hexes := make([dynamic]Hex)
+	defer delete(playable_hexes)
+
+	outer: for key, idx in game.groups_map {
+		// Hex must be empty. Hope Slotmap does not give a Key of 0.
+		(key == 0) or_continue 
+
+		hex := hex_from_index(idx)
+		for flag in CONNECTION_FLAGS {
+			nbr_hex := hex + flag_dir(flag)
+			nbr_idx := hex_to_index(nbr_hex) or_continue
+
+			nbr_key := game.groups_map[nbr_idx]
+			if nbr_key == 0 do continue
+
+			if slotmap_contains_key(enemy_grps, nbr_key) {
+				append(&playable_hexes, hex)
+				continue outer
+			} else if slotmap_contains_key(friendly_grps, nbr_key) {
+				grp := slotmap_get(friendly_grps, nbr_key)
+				if grp.extendable && grp.state[idx] == .Liberty {
+					append(&playable_hexes, hex)
+					continue outer
+				}
+			} else {
+				// This is essentially an assert.
+				panic("key is not 0, is not in friendly groups, not in enemy groups, ??")
+			}
+		}
+	}
+
+	// fill Tiles to go with found hexes.
+	candidate_moves := make([dynamic]Move)
+	defer delete(candidate_moves)
+
+	for hex in playable_hexes {
+		idx := hex_to_index(hex)
+		for tile in friendly_hand {
+			if tile_is_empty(tile) do continue
+
+			score := 0 // if score is 6, tile is playable.
+			defer if score == 6 do append(&candidate_moves, Move{hex, tile})
+
+			for flag in CONNECTION_FLAGS {
+				nbr_hex  := hex + flag_dir(flag)
+				nbr_idx, in_bounds := hex_to_index(nbr_hex)
+				nbr_tile := game.board[nbr_idx] // this is fine as `nbr_idx` is 0 when hex is out of bounds.
+
+				score_inc := (!in_bounds && flag not_in tile) ||
+					     (in_bounds  && (tile_is_empty(nbr_tile) ||
+	/* so much rightward drift here */		     (flag in     tile && flag_opposite(flag) in     nbr_tile) ||
+	/* the line is also over 100 chars */		     (flag not_in tile && flag_opposite(flag) not_in nbr_tile))) 
+				
+				score += 1 if score_inc else 0
+			}
+		}
+	}
+
+	// todo: deal with Oscillation
+}
+```
+
+Now, back to Oscillation
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
