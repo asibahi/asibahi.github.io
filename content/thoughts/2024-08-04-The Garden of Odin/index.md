@@ -53,14 +53,14 @@ All this neatly fits into a `u8`! And Odin has bitsets native into the language.
 // the two players are Guest and Host. Guest starts.
 
 Tile_Flag :: enum u8 {
-	Top_Rght,
-	Right,
-	Btm_Right,
-	Btm_Left,
-	Left,
-	Top_Left,
-	Owner_Is_Host,
-	Controller_Is_Host,
+    Top_Rght,
+    Right,
+    Btm_Right,
+    Btm_Left,
+    Left,
+    Top_Left,
+    Owner_Is_Host,
+    Controller_Is_Host,
 }
 Tile :: distinct bit_set[Tile_Flag;u8]
 ```
@@ -71,7 +71,7 @@ The game starts with 126 unique tiles. Guest starts with the tiles `0b00_000_001
 // ^ is the pointer operator in Odin.
 // ~ is bitwise XOR.
 tile_flip:: proc(t: ^Tile) {
-	t^ ~= Tile{.Controller_Is_Host}
+    t^ ~= Tile{.Controller_Is_Host}
 }
 ```
 
@@ -87,23 +87,23 @@ I oscillated (heh) between a few ideas, but eventually settled on a giant big ar
 Board :: [CELL_COUNT]Tile
 
 board_get_tile :: proc(back: ^[CELL_COUNT]Tile, hex: Hex) -> (^Tile, bool) {
-	if hex_distance(hex, CENTER) > N {
-		return nil, false
-	}
+    if hex_distance(hex, CENTER) > N {
+        return nil, false
+    }
 
-	// From RedBlob on representing Hexagonal boards with an array of arrays:
-	// Store Hex(q, r) at array[r][q - max(0, N-r)]. Row r size is 2*N+1 - abs(N-r).
-	// this loop calculates r's offset.
+    // From RedBlob on representing Hexagonal boards with an array of arrays:
+    // Store Hex(q, r) at array[r][q - max(0, N-r)]. Row r size is 2*N+1 - abs(N-r).
+    // this loop calculates r's offset.
 
-	q, r := hex[0], hex[1]
+    q, r := hex[0], hex[1]
 
-	r_len := 0
-	for r_idx in 0 ..< r {
-		r_len += 2 * int(N) + 1 - abs(int(N - r_idx))
-	}
+    r_len := 0
+    for r_idx in 0 ..< r {
+        r_len += 2 * int(N) + 1 - abs(int(N - r_idx))
+    }
 
-	idx := r_len + int(q - max(0, N - r))
-	return &back[idx], true
+    idx := r_len + int(q - max(0, N - r))
+    return &back[idx], true
 }
 ```
 
@@ -111,35 +111,35 @@ But having this loop run every time I make a look up is .. uncertain at best. So
 
 ```odin
 board_get_tile :: proc(back: ^[CELL_COUNT]Tile, hex: Hex) -> (^Tile, bool) {
-	if hex_distance(hex, CENTER) > N {
-		return nil, false
-	}
+    if hex_distance(hex, CENTER) > N {
+        return nil, false
+    }
 
-	q, r := hex[0], hex[1]
+    q, r := hex[0], hex[1]
 
-	r_len := 0
-	switch r {
-		case 0:
-		case 1:  r_len =   9
-		case 2:  r_len =  19
-		case 3:  r_len =  30
-		case 4:  r_len =  42
-		case 5:  r_len =  55
-		case 6:  r_len =  69
-		case 7:  r_len =  84
-		case 8:  r_len = 100
-		case 9:  r_len = 117
-		case 10: r_len = 133
-		case 11: r_len = 148
-		case 12: r_len = 162
-		case 13: r_len = 175
-		case 14: r_len = 187
-		case 15: r_len = 198
-		case 16: r_len = 208
-	}
+    r_len := 0
+    switch r {
+        case  0:
+        case  1: r_len =   9
+        case  2: r_len =  19
+        case  3: r_len =  30
+        case  4: r_len =  42
+        case  5: r_len =  55
+        case  6: r_len =  69
+        case  7: r_len =  84
+        case  8: r_len = 100
+        case  9: r_len = 117
+        case 10: r_len = 133
+        case 11: r_len = 148
+        case 12: r_len = 162
+        case 13: r_len = 175
+        case 14: r_len = 187
+        case 15: r_len = 198
+        case 16: r_len = 208
+    }
 
-	idx := r_len + int(q - max(0, N - r))
-	return &back[idx], true
+    idx := r_len + int(q - max(0, N - r))
+    return &back[idx], true
 }
 ```
 
@@ -158,12 +158,12 @@ HAND_SIZE :: 63
 Hand :: distinct [HAND_SIZE]Tile
 
 hands_init :: proc() -> (guest: Hand, host: Hand) {
-	for i in 0 ..< u8(HAND_SIZE) {
-		guest[i] = transmute(Tile)(i + 0o001)
-		host[i]  = transmute(Tile)(i + 00301)
-	}
+    for i in 0 ..< u8(HAND_SIZE) {
+        guest[i] = transmute(Tile)(i + 0o001)
+        host[i]  = transmute(Tile)(i + 0o301)
+    }
 
-	return
+    return
 }
 ```
 
@@ -171,18 +171,18 @@ Also, to check the legality of move, the player has to have the tile available t
 
 ```odin
 hand_has_tile :: proc(hand: Hand, id: u8) -> bool {
-	assert(0 < id, "Blank Tile is not playable")
-	assert(id <= HAND_SIZE, "Tile is impossible")
+    assert(0 < id, "Blank Tile is not playable")
+    assert(id <= HAND_SIZE, "Tile is impossible")
 
-	return !tile_is_empty(hand[id - 1])
+    return !tile_is_empty(hand[id - 1])
 }
 
 hand_get_tile :: proc(hand: ^Hand, id: u8) -> (Tile, bool) {
-	if !hand_has_tile(hand^, id) do return nil, false
+    if !hand_has_tile(hand^, id) do return nil, false
 
-	ret := hand[id - 1]
-	hand[id - 1] = {}
-	return ret, true
+    ret := hand[id - 1]
+    hand[id - 1] = {}
+    return ret, true
 }
 ```
 
@@ -193,20 +193,20 @@ import "core:testing"
 
 @(test)
 test_hand_get_tile :: proc(t: ^testing.T) {
-	w, _ := hands_init()
+    w, _ := hands_init()
 
-	tile: Tile
-	ok: bool
+    tile: Tile
+    ok: bool
 
-	// should be successful
-	tile, ok = hand_get_tile(&w, 63)
-	testing.expect(t, !tile_is_empty(tile))
-	testing.expect(t, ok)
+    // should be successful
+    tile, ok = hand_get_tile(&w, 63)
+    testing.expect(t, !tile_is_empty(tile))
+    testing.expect(t, ok)
 
-	// should fail. tile was emptied
-	tile, ok = hand_get_tile(&w, 63)
-	testing.expect(t, tile_is_empty(tile))
-	testing.expect(t, !ok)
+    // should fail. tile was emptied
+    tile, ok = hand_get_tile(&w, 63)
+    testing.expect(t, tile_is_empty(tile))
+    testing.expect(t, !ok)
 }
 // other tests go here
 ```
@@ -225,24 +225,24 @@ The most straightforward way to do that is a struct. I do not really know if thi
 
 ```odin
 Player :: enum u8 {
-	Guest, // White. Goes first.
-	Host,  // Black
+    Guest, // White. Goes first.
+    Host,  // Black
 }
 
 Status :: enum u8 {
-	Ongoing,
-	Guest_Win,
-	Host_Win,
-	Tie,
+    Ongoing,
+    Guest_Win,
+    Host_Win,
+    Tie,
 }
 
 // The Object of our attention
 Game :: struct {
-	board:                 Board,
-	to_play:               Player,
-	status:                Status,
-	guest_hand, host_hand: Hand,
-	// ... more to come
+    board:                 Board,
+    to_play:               Player,
+    status:                Status,
+    guest_hand, host_hand: Hand,
+    // ... more to come
 }
 ```
 
@@ -250,8 +250,8 @@ To inquire about moves, a `Move` struct is needed[^3]. A move is simply a placem
 
 ```odin
 Move :: struct {
-	hex:  Hex,
-	tile: Tile,
+    hex:  Hex,
+    tile: Tile,
 }
 ```
 
@@ -277,30 +277,30 @@ DATA_AREA: Bitboard : {{}, {}, {}, {}, {}, {}, {25, 26, 27, 28, 29, 30, 31}} // 
 // helper procedure for common maths 
 @(private = "file")
 bit_to_col_row :: proc(bit: int) -> (col, row: int) {
-	col = bit % 32
-	row = bit / 32
-	return
+    col = bit % 32
+    row = bit / 32
+    return
 }
 
 bb_set_bit :: proc(bb: ^Bitboard, bit: int) {
-	assert(0 <= bit && bit < CELL_COUNT) // assert here to allow an unchecked version for meta data
-	col, row := bit_to_col_row(bit)
-	bb^[row] |= {col}
+    assert(0 <= bit && bit < CELL_COUNT) // assert here to allow an unchecked version for meta data
+    col, row := bit_to_col_row(bit)
+    bb^[row] |= {col}
 }
 
 bb_get_bit :: proc(bb: Bitboard, bit: int) -> bool {
-	col, row := bit_to_col_row(bit)
-	return col in bb[row]
+    col, row := bit_to_col_row(bit)
+    return col in bb[row]
 }
 ```
 
 Not to get ahead of the topic, but merging two of these bitboards (bitwise `OR`) is now as simple as this:
 
 ```odin
-group_capture :: proc(winner, loser: ^Group) {
-	// ----- snipped
-	winner.tiles |= loser.tiles // the `tiles` field is a Bitboard.
-	// ----- snipped
+group_capture :: proc(blessed, cursed: ^Group) {
+    // ----- snipped
+    blessed.tiles |= cursed.tiles // the `tiles` field is a Bitboard.
+    // ----- snipped
 }
 ```
 
@@ -309,33 +309,33 @@ As an addition, I implemented an iterator over the set bits in `Bitboard`. Odin 
 ```odin
 // The State machine
 Bitboard_Iterator :: struct { 
-	bb:   Bitboard,
-	next: int,
+    bb:   Bitboard,
+    next: int,
 }
 bb_make_iter :: proc(bb: Bitboard) -> (it: Bitboard_Iterator) {
-	it.bb = bb & PLAY_AREA
-	return
+    it.bb = bb & PLAY_AREA
+    return
 }
 
 // The function
 bb_iter :: proc(it: ^Bitboard_Iterator) -> (item: Hex, idx: int, ok: bool) {
-	for i in it.next ..< CELL_COUNT {
-		if bb_get_bit(it.bb, i) {
-			item = hex_from_index(i)
-			idx = i
-			it.next = i + 1
-			ok = true
-			return
-		}
-	}
+    for i in it.next ..< CELL_COUNT {
+        if bb_get_bit(it.bb, i) {
+            item = hex_from_index(i)
+            idx = i
+            it.next = i + 1
+            ok = true
+            return
+        }
+    }
 
-	return
+    return
 }
 
 // And it is used such:
 bbi := bb_make_iter(bitboard_from_somewhere)
 for hex, idx in bb_iter(&bbi) {
-	// do something with this hex or its corresponding index
+    // do something with this hex or its corresponding index
 }
 ```
 
@@ -415,12 +415,12 @@ Sm_Key :: distinct c.uint64_t
 Sm_Item :: ^Group
 
 foreign slotmap {
-	slotmap_init	:: proc() -> Slot_Map ---
-	slotmap_destroy :: proc(sm: Slot_Map) ---
-	slotmap_insert	:: proc(sm: Slot_Map, item: Sm_Item) -> Sm_Key ---
-	slotmap_contains_key :: proc(sm: Slot_Map, key: Sm_Key) -> c.bool ---
-	slotmap_get	:: proc(sm: Slot_Map, key: Sm_Key) -> Sm_Item ---
-	slotmap_remove 	:: proc(sm: Slot_Map, key: Sm_Key) -> SmItem ---
+    slotmap_init         :: proc() -> Slot_Map ---
+    slotmap_destroy      :: proc(sm: Slot_Map) ---
+    slotmap_insert       :: proc(sm: Slot_Map, item: Sm_Item) -> Sm_Key ---
+    slotmap_contains_key :: proc(sm: Slot_Map, key: Sm_Key)   -> c.bool ---
+    slotmap_get          :: proc(sm: Slot_Map, key: Sm_Key)   -> Sm_Item ---
+    slotmap_remove       :: proc(sm: Slot_Map, key: Sm_Key)   -> SmItem ---
 }
 ```
 
@@ -434,8 +434,8 @@ A group is, simply, two bitboards:
 
 ```odin
 Group :: struct {
-	tiles:     Bitboard,
-	liberties: Bitboard, 	
+    tiles:     Bitboard,
+    liberties: Bitboard,
 }
 ```
 
@@ -443,20 +443,20 @@ Each group keeps track of its location (which hexes it occupies) and its liberti
 
 ```odin
 bb_card :: proc(bb: Bitboard) -> (ret: int) {
-	temp := bb & PLAY_AREA
-	#unroll for i in 0 ..< 7 { // premature optimization, perhaps?
-		ret += card(temp[i])
-	}
-	return
+    temp := bb & PLAY_AREA
+    #unroll for i in 0 ..< 7 { // premature optimization, perhaps?
+        ret += card(temp[i])
+    }
+    return
 }
 
 group_size :: proc(grp: ^Group) -> int {
-	return bb_card(grp.tiles)
+    return bb_card(grp.tiles)
 }
 
 
 group_life :: proc(grp: ^Group) -> int {
-	return bb_card(grp.liberties)
+    return bb_card(grp.liberties)
 }
 ```
 
@@ -466,13 +466,13 @@ Revisiting the `Game` struct from before:
 
 ```odin
 Game :: struct {
-	board:                 Board,
-	to_play:               Player,
-	status:                Status,
-	last_move:             Maybe(Move), // <-- I will get to that
-	guest_hand, host_hand: Hand,
-	groups_map:            [CELL_COUNT]Sm_Key,
-	guest_grps, host_grps: Slot_Map,
+    board:                 Board,
+    to_play:               Player,
+    status:                Status,
+    last_move:             Maybe(Move), // <-- I will get to that
+    guest_hand, host_hand: Hand,
+    groups_map:            [CELL_COUNT]Sm_Key,
+    guest_grps, host_grps: Slot_Map,
 }
 ``` 
 
@@ -483,21 +483,21 @@ There is also no history tracking, which needs lists of `Move`s and past  `Board
 ```odin
 // A player's territory consists of the number of their pieces on the board minus the number of pieces they didn't place.
 game_get_score :: proc(game: ^Game) -> (guest, host: int) {
-	for tile in game.board {
-		(!tile_is_empty(tile)) or_continue
-		if .Controller_Is_Host in tile {
-			host += 1
-		} else {
-			guest += 1
-		}
-	}
-	for tile in game.guest_hand {
-		if !tile_is_empty(tile) do guest -= 1
-	}
-	for tile in game.host_hand {
-		if !tile_is_empty(tile) do host -= 1
-	}
-	return
+    for tile in game.board {
+        (!tile_is_empty(tile)) or_continue
+        if .Controller_Is_Host in tile {
+            host  += 1
+        } else {
+            guest += 1
+        }
+    }
+    for tile in game.guest_hand {
+        if !tile_is_empty(tile) do guest -= 1
+    }
+    for tile in game.host_hand {
+        if !tile_is_empty(tile) do host  -= 1
+    }
+    return
 }
 ```
 
@@ -550,8 +550,8 @@ Back to code. As a refresher, here is `Move`:
 
 ```odin
 Move :: struct {
-	hex:  Hex,
-	tile: Tile,
+    hex:  Hex,
+    tile: Tile,
 }
 ```
 
@@ -569,74 +569,70 @@ Perhaps the most straightforward way to do it is to have `game_make_move` do *al
 
 ```odin
 Game :: struct {
-	board:                 Board,
-	to_play:               Player,
-	status:                Status,
-	last_move:             Maybe(Move),
-	//
-	guest_hand, host_hand: Hand,
-	//
-	groups_map:            [CELL_COUNT]SmKey,
-	guest_grps, host_grps: SlotMap,
-	// 
-	legal_moves:           [dynamic]Move,
+    board:                 Board,
+    to_play:               Player,
+    status:                Status,
+    last_move:             Maybe(Move),
+
+    guest_hand, host_hand: Hand,
+
+    groups_map:            [CELL_COUNT]SmKey,
+    guest_grps, host_grps: SlotMap,
+
+    legal_moves:           [dynamic]Move,
 }
 
 game_make_move :: proc(game: ^Game, candidate: Maybe(Move)) -> bool {
-	(game.status == .Ongoing) or_return // Game is over. What are you doing?
-	move, not_pass := candidate.?
+    (game.status == .Ongoing) or_return // Game is over. What are you doing?
+    move, not_pass := candidate.?
 
-	// legal move check
-	(!not_pass ||
-		slice.contains(game.legal_moves[:], move) ||
-		board_is_empty(&game.board)) or_return
+    // legal move check
+    (!not_pass ||
+        slice.contains(game.legal_moves[:], move) ||
+        board_is_empty(&game.board)) or_return
 
-	defer if game.status == .Ongoing {
-		switch game.to_play {
-		case .Guest:
-			game.to_play = .Host
-		case .Host:
-			game.to_play = .Guest
-		}
-		game.last_move = move
-		game_regen_legal_moves(game)
-	}
+    defer if game.status == .Ongoing {
+        switch game.to_play {
+        case .Guest: game.to_play = .Host
+        case .Host:  game.to_play = .Guest
+        }
+        game.last_move = move
+        game_regen_legal_moves(game)
+    }
 
-	if !not_pass { 	// Pass
-		if game.last_move == nil { 	// Game ends
-			guest, host := game_get_score(game)
-			if guest > host do game.status = .Guest_Win
-			else if guest < host do game.status = .Host_Win
-			else do game.status = .Tie
-		}
-		return true
-	}
+    if !not_pass {     // Pass
+        if game.last_move == nil {     // Game ends
+            guest, host := game_get_score(game)
+            if guest > host do game.status = .Guest_Win
+            else if guest < host do game.status = .Host_Win
+            else do game.status = .Tie
+        }
+        return true
+    }
 
-	active_hand: ^Hand
+    active_hand: ^Hand
 
-	switch game.to_play {
-	case .Guest:
-		active_hand = &game.guest_hand
-	case .Host:
-		active_hand = &game.host_hand
-	}
+    switch game.to_play {
+    case .Guest: active_hand = &game.guest_hand
+    case .Host:  active_hand = &game.host_hand
+    }
 
-	// Make move. Already known to be legal!!
-	hand_tile, removed := hand_remove_tile(active_hand, move.tile)
-	assert(removed) // but verify
-	game.board[hex_to_index(move.hex)] = hand_tile
-	move.tile = hand_tile // might be superfluous, but just to ascertain the Owner flags are set correctly
+    // Make move. Already known to be legal!!
+    hand_tile, removed := hand_remove_tile(active_hand, move.tile)
+    assert(removed) // but verify
+    game.board[hex_to_index(move.hex)] = hand_tile
+    move.tile = hand_tile // might be superfluous, but just to ascertain the Owner flags are set correctly
 
-	// TODO: update game state
+    // TODO: update game state
 
-	return true
+    return true
 }
 
 @(private)
 game_regen_legal_moves :: proc(game: ^Game) {
-	clear(&game.legal_moves)
+    clear(&game.legal_moves)
 
-	// TODO: build them again
+    // TODO: build them again
 }
 ```
 
@@ -653,22 +649,22 @@ The simplest, and shortest, game state change that is not a Pass, is a Tile that
 ```odin
 @(private)
 group_section_init :: proc(move: Move, game: ^Game) -> (ret: Group, ok: bool = true) {
-	// Check that all Connected sides connect to empty tiles.
-	// AND find Liberties
-	for flag in move.tile & CONNECTION_FLAGS {
-		neighbor := move.hex + flag_dir(flag)
+    // Check that all Connected sides connect to empty tiles.
+    // AND find Liberties
+    for flag in move.tile & CONNECTION_FLAGS {
+        neighbor := move.hex + flag_dir(flag)
 
-		t, in_bounds := board_get_tile(&game.board, neighbor)
-		if in_bounds {
-			tile_is_empty(t^) or_return
-			bb_set_bit(&ret.liberties, hex_to_index(neighbor))
-		}
-	}
+        t, in_bounds := board_get_tile(&game.board, neighbor)
+        if in_bounds {
+            tile_is_empty(t^) or_return
+            bb_set_bit(&ret.liberties, hex_to_index(neighbor))
+        }
+    }
 
-	bb_set_bit(&ret.tiles, hex_to_index(move.hex))
-	bb_set_bit_unchecked(&ret.liberties, CELL_COUNT) // Special location for whether it is own section
+    bb_set_bit(&ret.tiles, hex_to_index(move.hex))
+    bb_set_bit_unchecked(&ret.liberties, CELL_COUNT) // Special location for whether it is own section
 
-	return
+    return
 }
 ```
 
@@ -676,9 +672,9 @@ And in `game_make_move` :
 
 ```odin
 if grp, ok := group_section_init(move, game); ok {
-	grp := new_clone(grp)
-	key := slotmap_insert(game.host_grps, grp)
-	game.groups_map[hex_to_index(move.hex)] = key
+    grp := new_clone(grp)
+    key := slotmap_insert(game.host_grps, grp)
+    game.groups_map[hex_to_index(move.hex)] = key
 } 
 ```
 
@@ -701,89 +697,89 @@ Ergo, the procedure for extension or merging is as follows. It turned *way* long
 ```odin
 @(private)
 group_extend_or_merge :: proc(move: Move, game: ^Game) -> (ok: bool = true) {
-	// Bug tracker
-	tile_liberties_count := card(move.tile & CONNECTION_FLAGS)
+    // Bug tracker
+    tile_liberties_count := card(move.tile & CONNECTION_FLAGS)
 
-	// Friendliness tracker
-	tile_control := move.tile & {.Controller_Is_Host}
+    // Friendliness tracker
+    tile_control := move.tile & {.Controller_Is_Host}
 
-	// Scratchpad: Found Groups
-	nbr_friend_grps: [6]Sm_Key
-	nfg_cursor: int
+    // Scratchpad: Found Groups
+    nbr_friend_grps: [6]Sm_Key
+    nfg_cursor:      int
 
-	// Scratchpad: New Liberties
-	new_libs: [6]Hex
-	libs_cursor: int
+    // Scratchpad: New Liberties
+    new_libs:    [6]Hex
+    libs_cursor: int
 
-	for flag in move.tile & CONNECTION_FLAGS {
-		neighbor := move.hex + flag_dir(flag)
-		nbr_tile := board_get_tile(&game.board, neighbor) or_continue
+    for flag in move.tile & CONNECTION_FLAGS {
+        neighbor := move.hex + flag_dir(flag)
+        nbr_tile := board_get_tile(&game.board, neighbor) or_continue
 
-		if tile_is_empty(nbr_tile^) {
-			new_libs[libs_cursor] = neighbor
-			libs_cursor += 1
-		} else if nbr_tile^ & {.Controller_Is_Host} == tile_control {
-			// Same Controller
-			tile_liberties_count -= 1
+        if tile_is_empty(nbr_tile^) {
+            new_libs[libs_cursor] = neighbor
+            libs_cursor += 1
+        } else if nbr_tile^ & {.Controller_Is_Host} == tile_control {
+            // Same Controller
+            tile_liberties_count -= 1
 
-			// record Group of neighbor tile.
-			key := game.groups_map[hex_to_index(neighbor)]
-			if !slice.contains(nbr_friend_grps[:], key) {
-				nbr_friend_grps[nfg_cursor] = key
-				nfg_cursor += 1
-			}
-		} else {
-			// Different Controller
-			return false
-		}
-	}
-	assert(tile_liberties_count >= 0, "if this is broken there is a legality bug")
-	assert(nfg_cursor > 0, "This proc should not be called with no friendly neighbors")
-	(tile_liberties_count > 0) or_return 	// if this is false then this might be a Suicide
+            // record Group of neighbor tile.
+            key := game.groups_map[hex_to_index(neighbor)]
+            if !slice.contains(nbr_friend_grps[:], key) {
+                nbr_friend_grps[nfg_cursor] = key
+                nfg_cursor += 1
+            }
+        } else {
+            // Different Controller
+            return false
+        }
+    }
+    assert(tile_liberties_count >= 0, "if this is broken there is a legality bug")
+    assert(nfg_cursor > 0, "This proc should not be called with no friendly neighbors")
+    (tile_liberties_count > 0) or_return     // if this is false then this might be a Suicide
 
-	// == Are we the Baddies?
-	friendly_grps: Slot_Map
-	if tile_control == {} {
-		friendly_grps = game.guest_grps
-	} else {
-		friendly_grps = game.host_grps
-	}
+    // == Are we the Baddies?
+    friendly_grps: Slot_Map
+    if tile_control == {} {
+        friendly_grps = game.guest_grps
+    } else {
+        friendly_grps = game.host_grps
+    }
 
-	// == Identify first group
-	blessed_key := nbr_friend_grps[0]
-	assert(slotmap_contains_key(friendly_grps, blessed_key))
-	blessed_grp := slotmap_get(friendly_grps, blessed_key)
-	bb_set_bit(&blessed_grp.tiles, hex_to_index(move.hex))
+    // == Identify first group
+    blessed_key := nbr_friend_grps[0]
+    assert(slotmap_contains_key(friendly_grps, blessed_key))
+    blessed_grp := slotmap_get(friendly_grps, blessed_key)
+    bb_set_bit(&blessed_grp.tiles, hex_to_index(move.hex))
 
-	// == Merge other groups with first group
-	for i in 1 ..< nfg_cursor {
-		assert(slotmap_contains_key(friendly_grps, nbr_friend_grps[i]))
-		grp := slotmap_remove(friendly_grps, nbr_friend_grps[i])
-		defer free(grp)
+    // == Merge other groups with first group
+    for i in 1 ..< nfg_cursor {
+        assert(slotmap_contains_key(friendly_grps, nbr_friend_grps[i]))
+        grp := slotmap_remove(friendly_grps, nbr_friend_grps[i])
+        defer free(grp)
 
-		blessed_grp.tiles |= grp.tiles
+        blessed_grp.tiles |= grp.tiles
 
-		// Only if both Groups are in their own Section is the new Group in its own section
-		play_area := PLAY_AREA & (blessed_grp.liberties | grp.liberties)
-		data_area := DATA_AREA & (blessed_grp.liberties & grp.liberties)
-		blessed_grp.liberties = play_area | data_area
-	}
+        // Only if both Groups are in their own Section is the new Group in its own section
+        play_area := PLAY_AREA & (blessed_grp.liberties | grp.liberties)
+        data_area := DATA_AREA & (blessed_grp.liberties & grp.liberties)
+        blessed_grp.liberties = play_area | data_area
+    }
 
-	// == Update liberties
-	bb_unset_bit(&blessed_grp.liberties, hex_to_index(move.hex))
-	for l in 0 ..< libs_cursor {
-		bb_set_bit(&blessed_grp.liberties, hex_to_index(new_libs[l]))
-	}
+    // == Update liberties
+    bb_unset_bit(&blessed_grp.liberties, hex_to_index(move.hex))
+    for l in 0 ..< libs_cursor {
+        bb_set_bit(&blessed_grp.liberties, hex_to_index(new_libs[l]))
+    }
 
-	// == Update the groupmap
-	bbi := bb_make_iter(blessed_grp.tiles)
-	for _, idx in bb_iter(&bbi) {
-		game.groups_map[idx] = blessed_key
-	}
+    // == Update the groupmap
+    bbi := bb_make_iter(blessed_grp.tiles)
+    for _, idx in bb_iter(&bbi) {
+        game.groups_map[idx] = blessed_key
+    }
 
-	// this should be all.
+    // this should be all.
 
-	return
+    return
 }
 ```
 
@@ -805,10 +801,10 @@ Currently, as far as a Group is concerned, a location can be one of three states
 
 ```odin
 Hex_State :: enum u8 {
-	Empty            = 0x00, // numbers chosen for a reason
-	Liberty          = 0x01,
-	Enemy_Connection = 0x11,
-	Member_Tile      = 0x13,
+    Empty            = 0b000, // numbers chosen for a reason
+    Liberty          = 0b001,
+    Enemy_Connection = 0b011,
+    Member_Tile      = 0b111,
 }
 ```
 
@@ -816,8 +812,8 @@ And this how the `Group` using this enum would look like:
 
 ```odin
 Rethought_Group :: struct {
-	state:      [CELL_COUNT]Hex_State,
-	extendable: bool, // sadly no clean niche to hide that
+    state:      [CELL_COUNT]Hex_State,
+    extendable: bool, // sadly no clean niche to hide that
 }
 ```
 
@@ -826,12 +822,12 @@ Much cleaner! Surprisingly, Odin allows bitwise OR over enumerations.[^7] If the
 Thinking through this, it is clear that `.Empty` with any other tag should be, well, that other tag. `.Liberty`, being essentially an empty cell as well, with any of the other two tags should produce the other tag. `.Member_Tile` and `.Enemy_Connection` overlap when capturing groups, so Enemies should be converted to Members. Here is the printed `OR` table:
 
 ```
-        Empty   Liberty   Enemy   Member
+          Empty   Liberty   Enemy   Member
 
-Empty   Empty   Liberty   Enemy   Member
-Liberty	        Liberty   Enemy   Member
-Enemy                     Enemy   Member
-Member                            Member
+Empty     Empty   Liberty   Enemy   Member
+Liberty ------>   Liberty   Enemy   Member
+Enemy   ---------------->   Enemy   Member
+Member  ------------------------>   Member
 ```
 Great. Looks good to me. Let's roll with it. This is how `Group` works now. Should I need more states I shall think of other clever numbers to use. Then follow the compiler's erros about missing fields and correct those as needed.
 
@@ -846,104 +842,104 @@ This above change makes the merging process much simpler. It also allowed me to 
 ```odin
 @(private)
 group_extend_or_merge :: proc(move: Move, game: ^Game) -> (ok: bool = true) {
-	// ----- snip: same as before, for now.
+    // ----- snip: same as before, for now.
 
-	// == Identify first group
-	blessed_key := nbr_friend_grps[0]
-	assert(slotmap_contains_key(friendly_grps, blessed_key))
-	blessed_grp := slotmap_get(friendly_grps, blessed_key)
-	blessed_grp.state[hex_to_index(move.hex)] = .Member_Tile
+    // == Identify first group
+    blessed_key := nbr_friend_grps[0]
+    assert(slotmap_contains_key(friendly_grps, blessed_key))
+    blessed_grp := slotmap_get(friendly_grps, blessed_key)
+    blessed_grp.state[hex_to_index(move.hex)] = .Member_Tile
 
-	// == Merge other groups with first group
-	for i in 1 ..< nfg_cursor {
-		assert(slotmap_contains_key(friendly_grps, nbr_friend_grps[i]))
-		grp := slotmap_remove(friendly_grps, nbr_friend_grps[i])
-		defer free(grp)
+    // == Merge other groups with first group
+    for i in 1 ..< nfg_cursor {
+        assert(slotmap_contains_key(friendly_grps, nbr_friend_grps[i]))
+        grp := slotmap_remove(friendly_grps, nbr_friend_grps[i])
+        defer free(grp)
 
-		blessed_grp.state |= grp.state
-		blessed_grp.extendable &= grp.extendable
-	}
+        blessed_grp.state |= grp.state
+        blessed_grp.extendable &= grp.extendable
+    }
 
-	// == Update liberties
-	for l in 0 ..< libs_cursor {
-		blessed_grp.state[hex_to_index(new_libs[l])] |= .Liberty
-	}
+    // == Update liberties
+    for l in 0 ..< libs_cursor {
+        blessed_grp.state[hex_to_index(new_libs[l])] |= .Liberty
+    }
 
-	// == Update the groupmap
-	for slot, idx in blessed_grp.state {
-		if slot == .Member_Tile do game.groups_map[idx] = blessed_key
-	}
+    // == Update the groupmap
+    for slot, idx in blessed_grp.state {
+        if slot == .Member_Tile do game.groups_map[idx] = blessed_key
+    }
 
-	return
+    return
 }
 ```
 
 Now, merging groups membership and liberties also merges their enemy connections as well. No additional bookkeeping! The check for potential Suicide earlier can now be removed, and writing this (larger and larger) procedure can continue:
 
 ```odin
-	// ----- snip: same as before + declaring pointers to enemy groups
+    // ----- snip: same as before + declaring pointers to enemy groups
 
-	// == Update liberties
-	for l in 0 ..< libs_cursor {
-		blessed_grp.state[hex_to_index(new_libs[l])] |= .Liberty
-	}
+    // == Update liberties
+    for l in 0 ..< libs_cursor {
+        blessed_grp.state[hex_to_index(new_libs[l])] |= .Liberty
+    }
 
-	if tile_liberties_count == 0      // Potential Suicide
-	   && group_life(blessed_grp) == 0 // Definite Suicide
-	{
-		// no insertion into the enemy slotmap .. there is merging to be done!
-		cursed_grp := slotmap_remove(friendly_grps, blessed_key)
-		defer free(cursed_grp)
+    if tile_liberties_count == 0      // Potential Suicide
+       && group_life(blessed_grp) == 0 // Definite Suicide
+    {
+        // no insertion into the enemy slotmap .. there is merging to be done!
+        cursed_grp := slotmap_remove(friendly_grps, blessed_key)
+        defer free(cursed_grp)
 
-		// Scratchpad 
-		nbr_enemy_grps := make([dynamic]Sm_Key)
-		defer delete(nbr_enemy_grps)
+        // Scratchpad 
+        nbr_enemy_grps := make([dynamic]Sm_Key)
+        defer delete(nbr_enemy_grps)
 
-		for loc, idx in cursed_grp.state {
-			#partial switch loc {
-			case .Member_Tile:
-				tile_flip(&game.board[idx])
-			case .Enemy_Connection:
-				key := game.groups_map[idx]
-				if !slice.contains(nbr_enemy_grps[:], key) {
-					append(&nbr_enemy_grps, key)
-				}
-			}
-		}
-		// == same steps as before
-		assert(len(nbr_enemy_grps) > 0) // or there is Oscillation
-		blessed_key = nbr_enemy_grps[0]
+        for loc, idx in cursed_grp.state {
+            #partial switch loc {
+            case .Member_Tile:
+                tile_flip(&game.board[idx])
+            case .Enemy_Connection:
+                key := game.groups_map[idx]
+                if !slice.contains(nbr_enemy_grps[:], key) {
+                    append(&nbr_enemy_grps, key)
+                }
+            }
+        }
+        // == same steps as before
+        assert(len(nbr_enemy_grps) > 0) // or there is Oscillation
+        blessed_key = nbr_enemy_grps[0]
 
-		assert(slotmap_contains_key(enemy_grps, blessed_key))
-		blessed_grp = slotmap_get(enemy_grps, blessed_key)
+        assert(slotmap_contains_key(enemy_grps, blessed_key))
+        blessed_grp = slotmap_get(enemy_grps, blessed_key)
 
-		blessed_grp.state |= cursed_grp.state
+        blessed_grp.state |= cursed_grp.state
 
-		for i in 1 ..< len(nbr_enemy_grps) {
-			assert(slotmap_contains_key(enemy_grps, nbr_enemy_grps[i]))
-			grp := slotmap_remove(enemy_grps, nbr_enemy_grps[i])
-			defer free(grp)
+        for i in 1 ..< len(nbr_enemy_grps) {
+            assert(slotmap_contains_key(enemy_grps, nbr_enemy_grps[i]))
+            grp := slotmap_remove(enemy_grps, nbr_enemy_grps[i])
+            defer free(grp)
 
-			blessed_grp.state |= grp.state
-		}
+            blessed_grp.state |= grp.state
+        }
 
-		// check if blessed_grp is extendable
-		extendable := true
-		for loc in blessed_grp.state {
-			if loc == .Enemy_Connection {
-				extendable = false
-				break
-			}
-		}
-		blessed_grp.extendable = extendable
-	}
+        // check if blessed_grp is extendable
+        extendable := true
+        for loc in blessed_grp.state {
+            if loc == .Enemy_Connection {
+                extendable = false
+                break
+            }
+        }
+        blessed_grp.extendable = extendable
+    }
 
-	// == Update the groupmap
-	for slot, idx in blessed_grp.state {
-		if slot == .Member_Tile do game.groups_map[idx] = blessed_key
-	}
+    // == Update the groupmap
+    for slot, idx in blessed_grp.state {
+        if slot == .Member_Tile do game.groups_map[idx] = blessed_key
+    }
 
-	return
+    return
 }
 ```
 
@@ -956,15 +952,15 @@ Similarly to attaching to friendlies, this move can either be a nothing, a captu
 So why separate it at all? The idea was it would simplify handling, but it does not seem to do that. So, rethinking the move handling, allow me to try summarising the logic that *actually* needs to be done (this was revised in tandem with writing the code in the next section):
 
 1. Create these trackers:
-	1. Liberties of the newly placed tile,
-	2. Neighboring, connected Friendlies (tracking Groups), and
-	3. Neighboring, connected Enemies (tracking locations).
+    1. Liberties of the newly placed tile,
+    2. Neighboring, connected Friendlies (tracking Groups), and
+    3. Neighboring, connected Enemies (tracking locations).
 2. Iterate over all Connected Sides of the newly placed tile, and fill in the trackers as needed,
 3. For every Friendly connected Group, merge them together. (If none are connected, the Tile starts its own Group with marked Liberties and Enemy neighbors.) Mark this group as "Blessed".
 4. Iterate over neighboring Enemy Groups, if any have a Liberty count of 0: [^8]
-	1. They are flipped and merged with the Blessed Group.
-	2. Iterate over connections of the Blessed Group, and merge with it any friendly Groups found.
-	3. Move is over. (This is because we already filtered for legal moves, or a check for Oscillation would be needed.)
+    1. They are flipped and merged with the Blessed Group.
+    2. Iterate over connections of the Blessed Group, and merge with it any friendly Groups found.
+    3. Move is over. (This is because we already filtered for legal moves, or a check for Oscillation would be needed.)
 5. The Blessed Group is checked for Liberty count. If it is 0, it is captured (flipped) and merged with its surrounding Enemy Groups.
 6. Done
 
@@ -977,235 +973,234 @@ A monstrous 230-ish lines of code which could really use some refactoring. This 
 ```odin
 @(private)
 game_update_state_inner :: proc(move: Move, game: ^Game) {
-	// Bug tracker
-	tile_liberties := card(move.tile & CONNECTION_FLAGS)
-	tile_liberties_countdown := tile_liberties
+    // Bug tracker
+    tile_liberties := card(move.tile & CONNECTION_FLAGS)
+    tile_liberties_countdown := tile_liberties
 
-	// Friendliness tracker
-	tile_control := move.tile & {.Controller_Is_Host}
+    // Friendliness tracker
+    tile_control := move.tile & {.Controller_Is_Host}
 
-	// Scratchpad: Found friendly Groups
-	nbr_friend_grps: [6]Sm_Key
-	nfg_counter: uint
+    // Scratchpad: Found friendly Groups
+    nbr_friend_grps: [6]Sm_Key
+    nfg_counter:     uint
 
-	// Scratchpad: Found Enemy Groups
-	nbr_enemy_tiles: [6]Hex
-	net_counter: uint
+    // Scratchpad: Found Enemy Groups
+    nbr_enemy_tiles: [6]Hex
+    net_counter:     uint
 
-	// Scratchpad: New Liberties
-	new_libs: [6]Hex
-	libs_counter: uint
+    // Scratchpad: New Liberties
+    new_libs:     [6]Hex
+    libs_counter: uint
 
-	for flag in move.tile & CONNECTION_FLAGS {
-		neighbor := move.hex + flag_dir(flag)
-		nbr_tile := board_get_tile(&game.board, neighbor) or_continue
+    for flag in move.tile & CONNECTION_FLAGS {
+        neighbor := move.hex + flag_dir(flag)
+        nbr_tile := board_get_tile(&game.board, neighbor) or_continue
 
-		if tile_is_empty(nbr_tile^) {
-			new_libs[libs_counter] = neighbor
-			libs_counter += 1
-		} else if nbr_tile^ & {.Controller_Is_Host} == tile_control {
-			// Same Controller
-			tile_liberties_countdown -= 1
+        if tile_is_empty(nbr_tile^) {
+            new_libs[libs_counter] = neighbor
+            libs_counter += 1
+        } else if nbr_tile^ & {.Controller_Is_Host} == tile_control {
+            // Same Controller
+            tile_liberties_countdown -= 1
 
-			// record Group of neighbor tile.
-			key := game.groups_map[hex_to_index(neighbor)]
-			if !slice.contains(nbr_friend_grps[:], key) {
-				nbr_friend_grps[nfg_counter] = key
-				nfg_counter += 1
-			}
-		} else {
-			// Different Controller
-			tile_liberties_countdown -= 1
+            // record Group of neighbor tile.
+            key := game.groups_map[hex_to_index(neighbor)]
+            if !slice.contains(nbr_friend_grps[:], key) {
+                nbr_friend_grps[nfg_counter] = key
+                nfg_counter += 1
+            }
+        } else {
+            // Different Controller
+            tile_liberties_countdown -= 1
 
-			nbr_enemy_tiles[net_counter] = neighbor
-			net_counter += 1
-		}
-	}
+            nbr_enemy_tiles[net_counter] = neighbor
+            net_counter += 1
+        }
+    }
 
-	assert(tile_liberties_countdown >= 0, "if this is broken there is a legality bug")
+    assert(tile_liberties_countdown >= 0, "if this is broken there is a legality bug")
 
-	// == Are we the Baddies?
-	friendly_grps: Slot_Map
-	enemy_grps: Slot_Map
-	if tile_control == {} {
-		// Guest Controller
-		friendly_grps = game.guest_grps
-		enemy_grps = game.host_grps
-	} else {
-		// Host Controller
-		friendly_grps = game.host_grps
-		enemy_grps = game.guest_grps
-	}
+    // == Are we the Baddies?
+    friendly_grps, enemy_grps: Slot_Map
+    if tile_control == {} {
+        // Guest Controller
+        friendly_grps = game.guest_grps
+        enemy_grps = game.host_grps
+    } else {
+        // Host Controller
+        friendly_grps = game.host_grps
+        enemy_grps = game.guest_grps
+    }
 
-	// The placed Tile's Group
-	blessed_key: Sm_Key
-	blessed_grp: Sm_Item
-	if nfg_counter == 0 {
-		blessed_grp = new(Group)
-		blessed_key = slotmap_insert(friendly_grps, blessed_grp)
+    // The placed Tile's Group
+    blessed_key: Sm_Key
+    blessed_grp: Sm_Item
+    if nfg_counter == 0 {
+        blessed_grp = new(Group)
+        blessed_key = slotmap_insert(friendly_grps, blessed_grp)
 
-		if net_counter == 0 {
-			blessed_grp.extendable = true
-		}
-	} else {
-		blessed_key = nbr_friend_grps[0]
-		assert(
-			slotmap_contains_key(friendly_grps, blessed_key),
-			"Friendly slotmap does not have friendly Key",
-		)
-		blessed_grp = slotmap_get(friendly_grps, blessed_key)
+        if net_counter == 0 {
+            blessed_grp.extendable = true
+        }
+    } else {
+        blessed_key = nbr_friend_grps[0]
+        assert(
+            slotmap_contains_key(friendly_grps, blessed_key),
+            "Friendly slotmap does not have friendly Key",
+        )
+        blessed_grp = slotmap_get(friendly_grps, blessed_key)
 
-		// == Merge other groups with blessed group
-		for i in 1 ..< nfg_counter {
-			assert(
-				slotmap_contains_key(friendly_grps, nbr_friend_grps[i]),
-				"Friendly slotmap does not have friendly Key",
-			)
-			temp_grp := slotmap_remove(friendly_grps, nbr_friend_grps[i])
-			defer free(temp_grp)
+        // == Merge other groups with blessed group
+        for i in 1 ..< nfg_counter {
+            assert(
+                slotmap_contains_key(friendly_grps, nbr_friend_grps[i]),
+                "Friendly slotmap does not have friendly Key",
+            )
+            temp_grp := slotmap_remove(friendly_grps, nbr_friend_grps[i])
+            defer free(temp_grp)
 
-			blessed_grp.state |= temp_grp.state
-			blessed_grp.extendable &= temp_grp.extendable
-		}
-	}
-	blessed_grp.state[hex_to_index(move.hex)] |= .Member_Tile
+            blessed_grp.state |= temp_grp.state
+            blessed_grp.extendable &= temp_grp.extendable
+        }
+    }
+    blessed_grp.state[hex_to_index(move.hex)] |= .Member_Tile
 
-	defer {
-		// == Update the groupmap
-		for slot, idx in blessed_grp.state {
-			if slot == .Member_Tile do game.groups_map[idx] = blessed_key
-		}
-	}
+    defer {
+        // == Update the groupmap
+        for slot, idx in blessed_grp.state {
+            if slot == .Member_Tile do game.groups_map[idx] = blessed_key
+        }
+    }
 
-	// == Update liberties
-	for i in 0 ..< libs_counter {
-		blessed_grp.state[hex_to_index(new_libs[i])] |= .Liberty
-	}
-	// == Update Enemy neighbors for blessed group
-	for i in 0 ..< net_counter {
-		blessed_grp.state[hex_to_index(nbr_enemy_tiles[i])] |= .Enemy_Connection
-	}
+    // == Update liberties
+    for i in 0 ..< libs_counter {
+        blessed_grp.state[hex_to_index(new_libs[i])] |= .Liberty
+    }
+    // == Update Enemy neighbors for blessed group
+    for i in 0 ..< net_counter {
+        blessed_grp.state[hex_to_index(nbr_enemy_tiles[i])] |= .Enemy_Connection
+    }
 
-	// == register surrounding Enemy Groups of blessed Group
-	surrounding_enemy_grps := make([dynamic]Sm_Key)
-	defer delete(surrounding_enemy_grps)
+    // == register surrounding Enemy Groups of blessed Group
+    surrounding_enemy_grps := make([dynamic]Sm_Key)
+    defer delete(surrounding_enemy_grps)
 
-	for slot, idx in blessed_grp.state {
-		(slot == .Enemy_Connection) or_continue
-		key := game.groups_map[idx]
-		if !slice.contains(surrounding_enemy_grps[:], key) {
-			append(&surrounding_enemy_grps, key)
-		}
-	}
+    for slot, idx in blessed_grp.state {
+        (slot == .Enemy_Connection) or_continue
+        key := game.groups_map[idx]
+        if !slice.contains(surrounding_enemy_grps[:], key) {
+            append(&surrounding_enemy_grps, key)
+        }
+    }
 
-	// == if there are no surrounding enemy groups there is nothing more to do
-	if len(surrounding_enemy_grps) == 0 {
-		assert(
-			group_life(blessed_grp) > 0,
-			"newly formed groups must have liberites or enemy connections",
-		)
-		blessed_grp.extendable = true
-		return
-	}
+    // == if there are no surrounding enemy groups there is nothing more to do
+    if len(surrounding_enemy_grps) == 0 {
+        assert(
+            group_life(blessed_grp) > 0,
+            "newly formed groups must have liberites or enemy connections",
+        )
+        blessed_grp.extendable = true
+        return
+    }
 
-	// == these are the friendly groups that surround the dead enemy groups.
-	level_2_surrounding_friendlies := make([dynamic]Sm_Key)
-	defer delete(level_2_surrounding_friendlies)
+    // == these are the friendly groups that surround the dead enemy groups.
+    level_2_surrounding_friendlies := make([dynamic]Sm_Key)
+    defer delete(level_2_surrounding_friendlies)
 
-	// == go over surrounding enemy groups to see if they're dead.
-	capture_occurance := false
-	for key in surrounding_enemy_grps {
-		assert(slotmap_contains_key(enemy_grps, key), "Enemy slotmap does not have enemy Key")
-		temp_grp := slotmap_get(enemy_grps, key)
-		temp_grp.state[hex_to_index(move.hex)] |= .Enemy_Connection // this is probably correct
+    // == go over surrounding enemy groups to see if they're dead.
+    capture_occurance := false
+    for key in surrounding_enemy_grps {
+        assert(slotmap_contains_key(enemy_grps, key), "Enemy slotmap does not have enemy Key")
+        temp_grp := slotmap_get(enemy_grps, key)
+        temp_grp.state[hex_to_index(move.hex)] |= .Enemy_Connection // this is probably correct
 
-		// Enemy Group is dead
-		(group_life(temp_grp) == 0) or_continue
-		capture_occurance = true
+        // Enemy Group is dead
+        (group_life(temp_grp) == 0) or_continue
+        capture_occurance = true
 
-		cursed_grp := slotmap_remove(enemy_grps, key)
-		defer free(cursed_grp)
+        cursed_grp := slotmap_remove(enemy_grps, key)
+        defer free(cursed_grp)
 
-		for slot, idx in cursed_grp.state {
-			#partial switch slot {
-			case .Member_Tile:
-				tile_flip(&game.board[idx])
-			case .Enemy_Connection:
-				key := game.groups_map[idx]
-				if !slice.contains(level_2_surrounding_friendlies[:], key) {
-					append(&level_2_surrounding_friendlies, key)
-				}
-			}
-		}
+        for slot, idx in cursed_grp.state {
+            #partial switch slot {
+            case .Member_Tile:
+                tile_flip(&game.board[idx])
+            case .Enemy_Connection:
+                key := game.groups_map[idx]
+                if !slice.contains(level_2_surrounding_friendlies[:], key) {
+                    append(&level_2_surrounding_friendlies, key)
+                }
+            }
+        }
 
-		// CAPTURE
-		blessed_grp.state |= cursed_grp.state
-		blessed_grp.extendable &= cursed_grp.extendable
-	}
+        // CAPTURE
+        blessed_grp.state      |= cursed_grp.state
+        blessed_grp.extendable &= cursed_grp.extendable
+    }
 
-	// == merge level 2 surrounding friendlies into blessed group
-	for key in level_2_surrounding_friendlies {
-		assert(slotmap_contains_key(friendly_grps, key))
-		temp_grp := slotmap_remove(friendly_grps, key)
-		defer free(temp_grp)
+    // == merge level 2 surrounding friendlies into blessed group
+    for key in level_2_surrounding_friendlies {
+        assert(slotmap_contains_key(friendly_grps, key))
+        temp_grp := slotmap_remove(friendly_grps, key)
+        defer free(temp_grp)
 
-		blessed_grp.state |= temp_grp.state
-		blessed_grp.extendable &= temp_grp.extendable
-	}
+        blessed_grp.state |= temp_grp.state
+        blessed_grp.extendable &= temp_grp.extendable
+    }
 
-	// == if there is a capture, it is done.
-	if capture_occurance do return
+    // == if there is a capture, it is done.
+    if capture_occurance do return
 
-	// == if blessed group's liberties larger than 0, it is done capturing
-	if group_life(blessed_grp) > 0 do return
+    // == if blessed group's liberties larger than 0, it is done capturing
+    if group_life(blessed_grp) > 0 do return
 
-	// == Now the blessed group has converted.
+    // == Now the blessed group has converted.
 
-	cursed_grp := slotmap_remove(friendly_grps, blessed_key)
-	defer free(cursed_grp)
+    cursed_grp := slotmap_remove(friendly_grps, blessed_key)
+    defer free(cursed_grp)
 
-	new_family := make([dynamic]Sm_Key)
-	defer delete(new_family)
+    new_family := make([dynamic]Sm_Key)
+    defer delete(new_family)
 
-	for loc, idx in blessed_grp.state {
-		#partial switch loc {
-		case .Member_Tile:
-			tile_flip(&game.board[idx])
-		case .Enemy_Connection:
-			key := game.groups_map[idx]
-			if !slice.contains(new_family[:], key) {
-				append(&new_family, key)
-			}
-		}
-	}
+    for loc, idx in blessed_grp.state {
+        #partial switch loc {
+        case .Member_Tile:
+            tile_flip(&game.board[idx])
+        case .Enemy_Connection:
+            key := game.groups_map[idx]
+            if !slice.contains(new_family[:], key) {
+                append(&new_family, key)
+            }
+        }
+    }
 
-	assert(len(new_family) > 0, "Oscillation")
+    assert(len(new_family) > 0, "Oscillation")
 
-	blessed_key = new_family[0]
-	assert(slotmap_contains_key(enemy_grps, blessed_key), "Enemy key is not in enemy map")
+    blessed_key = new_family[0]
+    assert(slotmap_contains_key(enemy_grps, blessed_key), "Enemy key is not in enemy map")
 
-	blessed_grp = slotmap_get(enemy_grps, blessed_key)
-	blessed_grp.state |= cursed_grp.state
+    blessed_grp = slotmap_get(enemy_grps, blessed_key)
+    blessed_grp.state |= cursed_grp.state
 
-	for i in 1 ..< len(new_family) {
-		assert(slotmap_contains_key(enemy_grps, new_family[i]))
-		temp_grp := slotmap_remove(enemy_grps, new_family[i])
-		defer free(temp_grp)
+    for i in 1 ..< len(new_family) {
+        assert(slotmap_contains_key(enemy_grps, new_family[i]))
+        temp_grp := slotmap_remove(enemy_grps, new_family[i])
+        defer free(temp_grp)
 
-		blessed_grp.state |= temp_grp.state
-	}
+        blessed_grp.state |= temp_grp.state
+    }
 
-	// check if new blessed group is extendable
-	extendable := true
-	for loc in blessed_grp.state {
-		if loc == .Enemy_Connection {
-			extendable = false
-			break
-		}
-	}
-	blessed_grp.extendable = extendable
+    // check if new blessed group is extendable
+    extendable := true
+    for loc in blessed_grp.state {
+        if loc == .Enemy_Connection {
+            extendable = false
+            break
+        }
+    }
+    blessed_grp.extendable = extendable
 
-	return
+    return
 }
 ```
 
@@ -1218,9 +1213,9 @@ This is the current state of this function, which a lot is riding on:
 ```odin
 @(private)
 game_regen_legal_moves :: proc(game: ^Game) {
-	clear(&game.legal_moves)
+    clear(&game.legal_moves)
 
-	// todo: build them again
+    // todo: build them again
 }
 ```
 
@@ -1232,88 +1227,103 @@ The naïve, crude approach is as follows: Iterate over every empty `Hex`, and if
 
 ```odin
 game_regen_legal_moves :: proc(game: ^Game) {
-	clear(&game.legal_moves)
+    clear(&game.legal_moves)
 
-	// == Are we the Baddies?
-	friendly_grps: Slot_Map
-	friendly_hand: ^Hand
-	enemy_grps: Slot_Map
+    // == Are we the Baddies?
+    friendly_grps: Slot_Map
+    friendly_hand: ^Hand
+    enemy_grps: Slot_Map
 
-	switch game.to_play {
-	case .Guest:
-		friendly_grps = game.guest_grps
-		friendly_hand = &game.guest_hand
-		enemy_grps    = game.host_grps
-	case .Host:
-		friendly_grps = game.host_grps
-		friendly_hand = &game.host_hand
-		enemy_grps    = game.guest_grps
-	}
+    switch game.to_play {
+    case .Guest:
+        friendly_grps = game.guest_grps
+        friendly_hand = &game.guest_hand
+        enemy_grps    = game.host_grps
+    case .Host:
+        friendly_grps = game.host_grps
+        friendly_hand = &game.host_hand
+        enemy_grps    = game.guest_grps
+    }
 
-	// get the hexes allowed to be played in
-	playable_hexes := make([dynamic]Hex)
-	defer delete(playable_hexes)
+    // get the hexes allowed to be played in
+    playable_hexes := make([dynamic]Hex)
+    defer delete(playable_hexes)
 
-	outer: for key, idx in game.groups_map {
-		// Hex must be empty. Hope Slotmap does not give a Key of 0.
-		(key == 0) or_continue 
+    outer: for key, idx in game.groups_map {
+        // Hex must be empty. Hope Slotmap does not give a Key of 0.
+        (key == 0) or_continue 
 
-		hex := hex_from_index(idx)
-		for flag in CONNECTION_FLAGS {
-			nbr_hex := hex + flag_dir(flag)
-			nbr_idx := hex_to_index(nbr_hex) or_continue
+        hex := hex_from_index(idx)
+        for flag in CONNECTION_FLAGS {
+            nbr_hex := hex + flag_dir(flag)
+            nbr_idx := hex_to_index(nbr_hex) or_continue
 
-			nbr_key := game.groups_map[nbr_idx]
-			if nbr_key == 0 do continue
+            nbr_key := game.groups_map[nbr_idx]
+            if nbr_key == 0 do continue
 
-			if slotmap_contains_key(enemy_grps, nbr_key) {
-				append(&playable_hexes, hex)
-				continue outer
-			} else if slotmap_contains_key(friendly_grps, nbr_key) {
-				grp := slotmap_get(friendly_grps, nbr_key)
-				if grp.extendable && grp.state[idx] == .Liberty {
-					append(&playable_hexes, hex)
-					continue outer
-				}
-			} else {
-				// This is essentially an assert.
-				panic("key is not 0, is not in friendly groups, not in enemy groups, ??")
-			}
-		}
-	}
+            if slotmap_contains_key(enemy_grps, nbr_key) {
+                append(&playable_hexes, hex)
+                continue outer
+            } else if slotmap_contains_key(friendly_grps, nbr_key) {
+                grp := slotmap_get(friendly_grps, nbr_key)
+                if grp.extendable && grp.state[idx] == .Liberty {
+                    append(&playable_hexes, hex)
+                    continue outer
+                }
+            } else {
+                // This is essentially an assert.
+                panic("key is not 0, is not in friendly groups, not in enemy groups, ??")
+            }
+        }
+    }
 
-	// fill Tiles to go with found hexes.
-	candidate_moves := make([dynamic]Move)
-	defer delete(candidate_moves)
+    // fill Tiles to go with found hexes.
+    candidate_moves := make([dynamic]Move)
+    defer delete(candidate_moves)
 
-	for hex in playable_hexes {
-		idx := hex_to_index(hex)
-		for tile in friendly_hand {
-			if tile_is_empty(tile) do continue
+    for hex in playable_hexes {
+        idx := hex_to_index(hex)
+        for tile in friendly_hand {
+            if tile_is_empty(tile) do continue
 
-			score := 0 // if score is 6, tile is playable.
-			defer if score == 6 do append(&candidate_moves, Move{hex, tile})
+            score := 0 // if score is 6, tile is playable.
+            defer if score == 6 do append(&candidate_moves, Move{hex, tile})
 
-			for flag in CONNECTION_FLAGS {
-				nbr_hex  := hex + flag_dir(flag)
-				nbr_idx, in_bounds := hex_to_index(nbr_hex)
-				nbr_tile := game.board[nbr_idx] // this is fine as `nbr_idx` is 0 when hex is out of bounds.
+            for flag in CONNECTION_FLAGS {
+                nbr_hex  := hex + flag_dir(flag)
+                nbr_idx, in_bounds := hex_to_index(nbr_hex)
+                nbr_tile := game.board[nbr_idx] // this is fine as `nbr_idx` is 0 when hex is out of bounds.
 
-				score_inc := (!in_bounds && flag not_in tile) ||
-					     (in_bounds  && (tile_is_empty(nbr_tile) ||
-	/* so much rightward drift here */		     (flag in     tile && flag_opposite(flag) in     nbr_tile) ||
-	/* the line is also over 100 chars */		     (flag not_in tile && flag_opposite(flag) not_in nbr_tile))) 
-				
-				score += 1 if score_inc else 0
-			}
-		}
-	}
+                score_inc := (!in_bounds && flag not_in tile) ||
+                             (in_bounds  && (tile_is_empty(nbr_tile) ||
+    /* so much rightward drift here */       (flag in     tile && flag_opposite(flag) in     nbr_tile) ||
+    /* the line is also over 100 chars */    (flag not_in tile && flag_opposite(flag) not_in nbr_tile))) 
+                
+                score += 1 if score_inc else 0
+            }
+        }
+    }
 
-	// todo: deal with Oscillation
+    // todo: deal with Oscillation
 }
 ```
 
-Now, back to Oscillation
+### Oscillation
+
+Now, back to Oscillation. What's that again?
+
+When a Group has no Liberties, it is converted to the other side. If, upon conversion, it  *still* has no Liberties, it flips again, and .. well .. oscillates. That's illegal!
+
+So Oscillation as a result of a Move can only happen if a Group has only one Liberty and the Mone is on *that* Hex. So I will make a number of assumptions here:
+
+1. If the Move connects *only* to Friendly Groups, and takes aways its last Liberty, it is Oscillation.
+2. If the Move connects *only* to an *extndable* Enemy Group, and takes away its last Liberty, it is Oscillation.
+3. If the Move connects *only* to a usual Enemy Group, and takes away its last Liberty, it is *not* Oscillation, but Capture. (If the surrounding friendly Groups had no Liberties of their own, they'd be captured.)
+4. If the Move connects to both a Friendly and an Enemy Group, and takes away both of their last Liberties, the status of the Enemy Group is taken into account as before.
+
+I do not if these assumptions would actually work out. A more sure approach is to actually just ... make the move, and should there be an oscillation, reject it, and roll back the changes. While it is possible, it would make the list of legal moves *wrong*, as it might include these Oscillation moves.
+
+Encoding these rules in the loop above is perhaps the best option. It would save an allocation of `candidate_moves`, and it is already iterating the edges and the neighbors. Just .. shoot up the score when it happens.
 
 
 
