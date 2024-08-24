@@ -1294,12 +1294,12 @@ game_regen_legal_moves :: proc(game: ^Game) {
                 nbr_idx, in_bounds := hex_to_index(nbr_hex)
                 nbr_tile := game.board[nbr_idx] // this is fine as `nbr_idx` is 0 when hex is out of bounds.
 
-                score_inc := (!in_bounds && flag not_in tile) ||
-                             (in_bounds  && (tile_is_empty(nbr_tile) ||
-    /* so much rightward drift here */       (flag in     tile && flag_opposite(flag) in     nbr_tile) ||
-    /* the line is also over 100 chars */    (flag not_in tile && flag_opposite(flag) not_in nbr_tile))) 
-                
-                score += 1 if score_inc else 0
+                cond := (!in_bounds && flag not_in tile) ||
+                         (in_bounds  && (tile_is_empty(nbr_tile) ||
+    /* so much rightward drift here */   (flag in     tile && flag_opposite(flag) in     nbr_tile) ||
+    /* the line is exactly 100 chars */  (flag not_in tile && flag_opposite(flag) not_in nbr_tile))) 
+				
+				score += 1 if cond else 0
             }
         }
     }
@@ -1316,20 +1316,79 @@ When a Group has no Liberties, it is converted to the other side. If, upon conve
 
 So Oscillation as a result of a Move can only happen if a Group has only one Liberty and the Mone is on *that* Hex. So I will make a number of assumptions here:
 
-1. If the Move connects *only* to Friendly Groups, and takes aways its last Liberty, it is Oscillation.
-2. If the Move connects *only* to an *extndable* Enemy Group, and takes away its last Liberty, it is Oscillation.
-3. If the Move connects *only* to a usual Enemy Group, and takes away its last Liberty, it is *not* Oscillation, but Capture. (If the surrounding friendly Groups had no Liberties of their own, they'd be captured.)
-4. If the Move connects to both a Friendly and an Enemy Group, and takes away both of their last Liberties, the status of the Enemy Group is taken into account as before.
+1. If the Move connects only to *extendable* Groups (Friendly or Enemy), and takes away their last Liberty, it is Oscillation.
+2. If the Move connects to a usual Group (Friendly or Enemy), it is *not* Oscillation, but either a Capture or a Suicide. (If the surrounding Groups had no other Liberties of their own, they'd be Captured already).
 
-I do not if these assumptions would actually work out. A more sure approach is to actually just ... make the move, and should there be an oscillation, reject it, and roll back the changes. While it is possible, it would make the list of legal moves *wrong*, as it might include these Oscillation moves.
+I do not know if these assumptions would actually work out. A more sure approach is to actually just ... make the move, and should there be an Oscillation, reject it, and roll back the changes. While it is possible, it would make the list of legal moves *wrong*, as it might include these Oscillation moves.
 
-Encoding these rules in the loop above is perhaps the best option. It would save an allocation of `candidate_moves`, and it is already iterating the edges and the neighbors. Just .. shoot up the score when it happens.
+Encoding these rules in the loop above is perhaps the best option. It would save an allocation of `candidate_moves`, and it is already iterating the edges and the neighbors. It could have its own tracker and score. This is how it currently looks:
 
+```odin
+    // ------- same as before, minus the temporary `candidate_moves`
+	for hex in playable_hexes {
+		idx := hex_to_index(hex)
+		for tile in friendly_hand {
+			if tile_is_empty(tile) do continue
 
+			score   := 0 // if score is 6, tile is playable.
+			osc_pen := 0 // unless this is equal to Tile cardinality
+			defer if score == 6 && osc_pen != card(tile & CONNECTION_FLAGS) { 
+				append(&game.legal_moves, Move{hex, tile}) 
+			}
 
+			for flag in CONNECTION_FLAGS {
+				nbr_hex  := hex + flag_dir(flag)
+				nbr_idx, in_bounds := hex_to_index(nbr_hex)
+				nbr_tile := game.board[nbr_idx] // this is fine as `nbr_idx` is 0 when hex is out of bounds.
 
+                cond := (!in_bounds && flag not_in tile) ||
+                         (in_bounds  && (tile_is_empty(nbr_tile) ||
+                                         (flag in     tile && flag_opposite(flag) in     nbr_tile) ||
+                                         (flag not_in tile && flag_opposite(flag) not_in nbr_tile))) 
 
+				score += 1 if cond else 0
 
+				// Only check for Oscillation if it takes away a Liberty.
+				(in_bounds && flag_opposite(flag) in nbr_tile) or_continue
+
+				nbr_key  := game.groups_map[nbr_idx]
+
+				if slotmap_contains_key(enemy_grps, nbr_key) {
+					nbr_grp := slotmap_get(enemy_grps, nbr_key)
+					if group_life(nbr_grp) == 1 && nbr_grp.extendable {
+						osc_pen += 1
+					}
+				} else if slotmap_contains_key(friendly_grps, nbr_key) {
+					nbr_grp := slotmap_get(friendly_grps, nbr_key)
+					if group_life(nbr_grp) == 1 && nbr_grp.extendable {
+						osc_pen += 1
+					}
+				}
+			}
+		}
+	}
+}
+```
+
+One tiny thing, this is `flag_opposite` :
+
+```odin
+flag_opposite :: proc(flag: Tile_Flag) -> (ret: Tile_Flag) {
+	#partial switch flag {
+	case .Top_Right: ret = .Btm_Left
+	case .Right:     ret = .Left
+	case .Btm_Right: ret = .Top_Left
+	case .Btm_Left:  ret = .Top_Right
+	case .Left:      ret = .Right
+	case .Top_Left:  ret = .Btm_Right
+	}
+	return
+}
+```
+
+I think it is done!! What's left? Oh, actually using it.
+
+## The Proof of the Pudding is in the Eating.
 
 
 
