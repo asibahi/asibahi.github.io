@@ -1294,12 +1294,12 @@ game_regen_legal_moves :: proc(game: ^Game) {
                 nbr_idx, in_bounds := hex_to_index(nbr_hex)
                 nbr_tile := game.board[nbr_idx] // this is fine as `nbr_idx` is 0 when hex is out of bounds.
 
-                cond := (!in_bounds && flag not_in tile) ||
-                         (in_bounds  && (tile_is_empty(nbr_tile) ||
-    /* so much rightward drift here */   (flag in     tile && flag_opposite(flag) in     nbr_tile) ||
-    /* the line is exactly 100 chars */  (flag not_in tile && flag_opposite(flag) not_in nbr_tile))) 
-				
-				score += 1 if cond else 0
+                ((!in_bounds && flag not_in tile) ||
+                 (in_bounds  && (tile_is_empty(nbr_tile) ||
+  /* so much rightward drift */  (flag in     tile && flag_opposite(flag) in     nbr_tile) ||
+  /* the line is 102 chars */    (flag not_in tile && flag_opposite(flag) not_in nbr_tile)))) or_break 
+                
+                score += 1 if cond else 0
             }
         }
     }
@@ -1325,48 +1325,48 @@ Encoding these rules in the loop above is perhaps the best option. It would save
 
 ```odin
     // ------- same as before, minus the temporary `candidate_moves`
-	for hex in playable_hexes {
-		idx := hex_to_index(hex)
-		for tile in friendly_hand {
-			if tile_is_empty(tile) do continue
+    for hex in playable_hexes {
+        idx := hex_to_index(hex)
+        for tile in friendly_hand {
+            if tile_is_empty(tile) do continue
 
-			score   := 0 // if score is 6, tile is playable.
-			osc_pen := 0 // unless this is equal to Tile cardinality
-			defer if score == 6 && osc_pen != card(tile & CONNECTION_FLAGS) { 
-				append(&game.legal_moves, Move{hex, tile}) 
-			}
+            score   := 0 // if score is 6, tile is playable.
+            osc_pen := 0 // unless this is equal to Tile cardinality
+            defer if score == 6 && osc_pen != card(tile & CONNECTION_FLAGS) { 
+                append(&game.legal_moves, Move{hex, tile}) 
+            }
 
-			for flag in CONNECTION_FLAGS {
-				nbr_hex  := hex + flag_dir(flag)
-				nbr_idx, in_bounds := hex_to_index(nbr_hex)
-				nbr_tile := game.board[nbr_idx] // this is fine as `nbr_idx` is 0 when hex is out of bounds.
+            for flag in CONNECTION_FLAGS {
+                nbr_hex  := hex + flag_dir(flag)
+                nbr_idx, in_bounds := hex_to_index(nbr_hex)
+                nbr_tile := game.board[nbr_idx] // this is fine as `nbr_idx` is 0 when hex is out of bounds.
 
-                cond := (!in_bounds && flag not_in tile) ||
-                         (in_bounds  && (tile_is_empty(nbr_tile) ||
-                                         (flag in     tile && flag_opposite(flag) in     nbr_tile) ||
-                                         (flag not_in tile && flag_opposite(flag) not_in nbr_tile))) 
+                ((!in_bounds && flag not_in tile) ||
+                 (in_bounds && (tile_is_empty(nbr_tile) ||
+                                (flag in     tile && flag_opposite(flag) in     nbr_tile) ||
+                                (flag not_in tile && flag_opposite(flag) not_in nbr_tile)))) or_break
 
-				score += 1 if cond else 0
+                score += 1
 
-				// Only check for Oscillation if it takes away a Liberty.
-				(in_bounds && flag_opposite(flag) in nbr_tile) or_continue
+                // Only check for Oscillation if it takes away a Liberty.
+                (in_bounds && flag_opposite(flag) in nbr_tile) or_continue
 
-				nbr_key  := game.groups_map[nbr_idx]
+                nbr_key  := game.groups_map[nbr_idx]
 
-				if slotmap_contains_key(enemy_grps, nbr_key) {
-					nbr_grp := slotmap_get(enemy_grps, nbr_key)
-					if group_life(nbr_grp) == 1 && nbr_grp.extendable {
-						osc_pen += 1
-					}
-				} else if slotmap_contains_key(friendly_grps, nbr_key) {
-					nbr_grp := slotmap_get(friendly_grps, nbr_key)
-					if group_life(nbr_grp) == 1 && nbr_grp.extendable {
-						osc_pen += 1
-					}
-				}
-			}
-		}
-	}
+                if slotmap_contains_key(enemy_grps, nbr_key) {
+                    nbr_grp := slotmap_get(enemy_grps, nbr_key)
+                    if group_life(nbr_grp) == 1 && nbr_grp.extendable {
+                        osc_pen += 1
+                    }
+                } else if slotmap_contains_key(friendly_grps, nbr_key) {
+                    nbr_grp := slotmap_get(friendly_grps, nbr_key)
+                    if group_life(nbr_grp) == 1 && nbr_grp.extendable {
+                        osc_pen += 1
+                    }
+                }
+            }
+        }
+    }
 }
 ```
 
@@ -1374,23 +1374,197 @@ One tiny thing, this is `flag_opposite` :
 
 ```odin
 flag_opposite :: proc(flag: Tile_Flag) -> (ret: Tile_Flag) {
-	#partial switch flag {
-	case .Top_Right: ret = .Btm_Left
-	case .Right:     ret = .Left
-	case .Btm_Right: ret = .Top_Left
-	case .Btm_Left:  ret = .Top_Right
-	case .Left:      ret = .Right
-	case .Top_Left:  ret = .Btm_Right
-	}
-	return
+    #partial switch flag {
+    case .Top_Right: ret = .Btm_Left
+    case .Right:     ret = .Left
+    case .Btm_Right: ret = .Top_Left
+    case .Btm_Left:  ret = .Top_Right
+    case .Left:      ret = .Right
+    case .Top_Left:  ret = .Btm_Right
+    }
+    return
 }
 ```
 
 I think it is done!! What's left? Oh, actually using it.
 
-## The Proof of the Pudding is in the Eating.
+## First Bug
 
+Did not take long to find a bug.
 
+```odin
+main :: proc() {
+    game := game_init()
+    defer game_destroy(game)
+
+    ok: bool
+
+    ok = game_make_move(
+        &game, 
+        Move{hex = {0, 0}, tile = tile_from_id(63, .Guest)}
+    )
+    fmt.printfln("%v", ok)
+
+    ok = game_make_move(
+        &game, 
+        Move{hex = {1, 0}, tile = tile_from_id(63, .Host)}
+    )
+    fmt.printfln("%v", ok)
+    
+    fmt.printfln("%v", game.groups_map)
+}
+```
+
+Both moves should be legal, and indeed both `ok`s are true. However, going over the printed output of `game.groups_map`, I noticed both of these tiles have the exact same Key. (And is in fact the same Key across multiple runs: 4294967297.)
+
+This is an artifact of how the `slotmap` crate does its thing, as I found out. The problem is that so far I have been operating under the assumption that the Keys produced are, at least reasonably, different from each other, as I have been using this Key in no less than three places to know in which camp does a key belong. (One of them is `game_destroy`, where it doesn't matter, but still!)
+
+The easy fix would be perhaps to annotate all three lookups with companion look ups to see the owner of the `Tile` in the corresponding `game.board` index. But this feels like a bandaid, that also adds another failure point.
+
+Trying different values I came across another bug that apparently triggered an assertion, but it was whether a `slotmap` contans a key or not. So a fix for this first bug is needed before any procession.
+
+## Rethinking the need for `slotmap`
+
+Using a Rust crate for this functionality has a couple of pain points already:
+
+- I have mentioned this before, but `u64` Keys are *huge*. They are much larger than what is needed in this game. The amount of Groups the entire game cannot actually exceed 126. (If all Tiles were played and each Tile had its own Group, which is also impossible.)
+- Speed of access: the slotmaps are behind pointers and the Groups are behind pointers, and this is checked and accessed multiple times per move.
+- Compilation: while this set up works fine on my machine TM, compiling a shim Rust crate separately from the main Odin codebase is a bit more effort than what is usally needed. If this were to be set up for users, I would need to include a build system.
+- WASM: Add to that, while `slotmap` itself can be compiled to WASM just fine, compiling two languages into one WASM module is .. not the easiest path forward.
+- Last but not least, undoing the Game state (somethign which is needed for engines) would be a *lot* easier if there were no pointers involved.
+
+So now what? Is a slotmap-like data structure even the correct decision at all, actually? Slotmap's advantage is reusing existing allocations for deleted items, while *not* reusing the handles/indices. But if it lives all on the stack, say through a `[CELL_COUNT]Group` array, it is not possible to grow memory dynamically as needed (since it is all statically allocated), and one would have to allocate for the worst case scenario *anyway* removing the main advantage there.
+
+One option is to put *all* Groups, from both sides, in one array (of size 126, as established), and use indices into that array as keys, and simply stop using that index whenever a Group dies. While a real game is never getting to 126 Groups at once, and there is no game database of played Dominions games to analyze and determine the maximum number of Groups in a real game is. Using [Mindsport's applet](https://mindsports.nl/index.php/dagaz/954-dominions), I managed to get to about 92 individual living "groups" at the same time before I got bored.
+
+How would this look like, though? Separate arrays, one for each player? One array for both? If the second, how to distinguish between friendly and enemy groups storage?
+
+My current thinking is to borrow the handle/index++ idea and invent, essentiall my own handle. Honestly I just want an excuse to use Odin's bit fields.
+
+```odin
+Group_Handle :: bit_field u8 {
+//  name:  Type   | Size
+    idx:   u8     | 6,
+    owner: Player | 1,
+    valid: bool   | 1,
+}
+
+```
+
+The `idx` here cannot, ever, be more than 63, which is all the address space we need for worst case scenario, and a little bit more. The `owner` field is one bit, either this player or that player. The last bit is a funny one: it is just to allow using the zero value of the key (where `valid` is false), as a sentinel value for an empty slot. At first, I considered having the `extendable` boolean I have had in `Group`, but that just makes bookkeeping and updating `Group` status that much harder. [^9] So now how about this?
+
+```odin
+Rethought_Group :: struct {
+    state:        [CELL_COUNT]Hex_State,
+    using status: bit_field u8 {
+        extendable: bool | 1,
+        alive:      bool | 1,
+        _padding:   u8   | 6, // <- ?
+    },
+}
+
+Group_Store :: // todo
+```
+The field `_padding` is there to suppress a compiler warning about boolean-only bit fields being a terrible idea.
+
+Mind you `Rethought_Group` has two Odin features Ginger Bill dislikes using: `using` and `bit_field`s, and uses them together, with an anonymous `bit_field` to boot. (I am actually pleasantly surprised this compiles and works at all.) My goal here is to essentially cram both of `extendable` and `alive` booleans into one byte, and they do not really make sense to me as their own type, and keep the nice ergonomics of using them. The advised/Ginger Bill-authorized way to write this is the following: 
+
+```odin
+Group_Status :: enum u8 {
+    Extendable,
+    Alive,
+}
+Rethought_Group :: struct {
+    state:  [CELL_COUNT]Hex_State,
+    status: bit_set[Object_Status; u8],
+}
+
+if .Extendable in grp.status { // etc
+```
+
+But I have already been using `Group` throughout, and I really like just writing this:
+
+```odin
+if grp.extendable { // etc
+
+// AND
+
+grp.extendable = true
+```
+
+But what is programming if not suppressing compiler warnings and ignoring the advice of more experienced practioners? *Especially* the author of the language you are writing in?
+
+Back to business. The first thing needed is to reimplement the `slotmap` API for the new `Group_Store`. Here is the original:
+
+```odin
+    slotmap_init         :: proc() -> Slot_Map ---
+    slotmap_destroy      :: proc(sm: Slot_Map) ---
+    slotmap_insert       :: proc(sm: Slot_Map, item: Sm_Item) -> Sm_Key ---
+    slotmap_contains_key :: proc(sm: Slot_Map, key: Sm_Key)   -> c.bool ---
+    slotmap_get          :: proc(sm: Slot_Map, key: Sm_Key)   -> Sm_Item ---
+    slotmap_remove       :: proc(sm: Slot_Map, key: Sm_Key)   -> Sm_Item ---
+```
+
+`init` and `destroy` are perhaps not needed, as they exist to manage heap memory. `contains_key` could be replaced by `get` (and `remove`) returning a success or failure value, as is idiomatic in Odin. To ascertain that `Group_Store` can only return keys of the appropriate Player, some type system hackery would have been of use, but alas I could not make it work. So I replaced it instead with cursed `using` hackery. (`Rethought_Group` is just `Group` here.)
+
+```odin
+Group_Store :: struct {
+    data:        [HAND_SIZE]Group,
+    using _meta: bit_field u8 {
+        cursor: u8     | 7,
+        player: Player | 1,
+    }
+}
+
+store_insert :: proc(store: ^Group_Store, group: Group) -> Group_Handle {
+    assert(group.alive, "trying to insert a dead group!")
+    store.data[store.cursor] = group
+    defer store.cursor += 1
+
+    return Group_Handle{idx = store.cursor, owner = store.player, valid = true}
+}
+
+store_get :: proc(store: ^Group_Store, key: Group_Handle) -> (ret: ^Group, ok: bool) {
+    (key.valid &&
+     store.player == key.owner && 
+     key.idx < store.cursor && 
+     store.data[key.idx].alive) or_return
+
+    return &store.data[key.idx], true
+}
+
+store_remove :: proc(store: ^Group_Store, key: Group_Handle) -> (ret: Group, ok: bool) {
+    grp := store_get(store, player, key) or_return
+    defer grp.alive = false
+
+    return grp^, true
+}
+```
+
+This covers it, maybe? Time to delete `slotmap.odin` and get going with some Compiler-Driven Development. I will not reprint all the changed code here, as it would be boring and a slog. Suffice it to say I did an admirable job at it and all the calls to `slotmap` were handled excellently and appropriately.
+
+Now time to check if that effort fixes that first bug. Here is the test code again (slightly edited):
+
+```odin
+main :: proc() {
+    game := game_init()
+    defer game_destroy(game)
+
+    ok: bool
+
+    ok = game_make_move(&game, Move{hex = {0, 0}, tile = tile_from_id(63, .Guest)})
+    fmt.printfln("%v", ok)
+
+    ok = game_make_move(&game, Move{hex = {1, 0}, tile = tile_from_id(63, .Host)})
+    fmt.printfln("%v", ok)
+
+    for key in game.groups_map {
+        fmt.printf("%v, ", transmute(u8)key)
+    }
+}
+```
+
+And voila! It gives two different keys of `128` and `192` (though I can't quite tell which is which) I caught a subtle bug while I was going through the code, which gave the need for a `valid` field in the key, so that it guarantees no valid key is `0`. 
 
 
 
@@ -1431,3 +1605,5 @@ I think it is done!! What's left? Oh, actually using it.
 [^7]: Rust would *totally* yell at me. Then tell me to implement the trait to define the behavior myself.
 
 [^8]: Freeling does not specify in which order captures are processed. I am assuming here the order is the same as Go. Anyway, all this needs to be verified later once (if?) the engine is implemented.
+
+[^9]: I have been thinking of why Groups need to own their own data anyway? Group membership is clearly delineated in `Game.group_map` as it currently is (which would become `[CELL_COUNT]Group_Handle` under the new regime.) Liberties and Enemy Connections can be calculated and collected with a combination of `game.groups_map` and, well, `game.board`. But that's another day's battle.
