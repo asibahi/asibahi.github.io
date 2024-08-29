@@ -75,7 +75,7 @@ tile_flip:: proc(t: ^Tile) {
 }
 ```
 
-## Board representation
+## Board Representation
 
 Here is where I go back and forth into reading Red Blob Games's [excellent guide to Hexagonal boards](https://www.redblobgames.com/grids/hexagons/).
 
@@ -1442,13 +1442,13 @@ The easy fix would be perhaps to annotate all three lookups with companion look 
 
 Trying different values I came across another bug that apparently triggered an assertion, but it was whether a `slotmap` contans a key or not. So a fix for this first bug is needed before any procession.
 
-## Rethinking the need for `slotmap`
+## Rethinking the Need for `slotmap`
 
 Using a Rust crate for this functionality has a couple of pain points already:
 
 - I have mentioned this before, but `u64` Keys are *huge*. They are much larger than what is needed in this game. The amount of Groups the entire game cannot actually exceed 126. (If all Tiles were played and each Tile had its own Group, which is also impossible.)
 - Speed of access: the slotmaps are behind pointers and the Groups are behind pointers, and this is checked and accessed multiple times per move.
-- Compilation: while this set up works fine on my machine TM, compiling a shim Rust crate separately from the main Odin codebase is a bit more effort than what is usally needed. If this were to be set up for users, I would need to include a build system.
+- Compilation: while this set up works fine on my machine <small>TM</small>, compiling a shim Rust crate separately from the main Odin codebase is a bit more effort than what is usally needed. If this were to be set up for users, I would need to include a build system.
 - WASM: Add to that, while `slotmap` itself can be compiled to WASM just fine, compiling two languages into one WASM module is .. not the easiest path forward.
 - Last but not least, undoing the Game state (somethign which is needed for engines) would be a *lot* easier if there were no pointers involved.
 
@@ -1648,11 +1648,49 @@ Rendering the board is the easy part. But pieces in Dominions are distinct from 
 
 Octal numbers today are mostly useless. Every language supports them because, well, they cost nothing to add, and they have one niche use in Unix file permissions. The *reason* they are useful for Unix file permissions is that these come in sets of three flags. So each set can be represented neatly by one octal digit (which stands for three bits).[^10]
 
-It just so happens that the Tiles in this game are also divided in two sets of three bits: three bits for the Right-side connections, and three to the Left-side connections, and two bits for Owner and Controller, [detailed earlier](#tiles). This makes it so the *right* digit represents the *right-side* connections, and the middle digit, to the *left* represents the *left* side connections. The rightmost digit is either `0` or `1` donating the Owner, and using ANSI magic, the terminal is colored by the Controller's color, which can be colored with the `ansi` module from Odin's core library. Neat, hah?
+It just so happens that the Tiles in this game are also divided in two sets of three bits: three bits for the Right-side connections, and three to the Left-side connections, and two bits for Owner and Controller, [detailed earlier](#tiles). This makes it so the *right* digit represents the *right-side* connections, and the middle digit, to the *left* represents the *left* side connections. The rightmost digit is either `0` or `1` donating the Owner, and using ANSI magic, the tile is colored by the Controller's color. Neat, hah?
 
-While this is unusable for an actual playable application meant for humans (a Graphical interface is more suited), it is very useful for debugging the game's status at any given point.
+While this is unusable for an actual playable application meant for humans (a Graphical interface is more suited), it is very useful for debugging the game's status at any given point. With some trial and error, this is the printing code, the result of which I do not know to show on the web without a screenshot.
 
+```odin
+import "core:encoding/ansi"
+import "core:fmt"
 
+board_print :: proc(board: Board) {
+    w_on_b :: ansi.CSI + ansi.FG_WHITE + ";" + ansi.BG_BLACK + ansi.SGR
+    b_on_w :: ansi.CSI + ansi.FG_BLACK + ";" + ansi.BG_WHITE + ansi.SGR
+    end :: ansi.CSI + ansi.RESET + ansi.SGR
+    
+    row := min(i8)
+    for tile, idx in board {
+        hex := hex_from_index(idx)
+        if hex.y > row {
+            row = hex.y
+            if row != -N do fmt.println("|")
+            for i in 0 ..< abs(row) {
+                fmt.print("  ")
+            }
+        }
+        if tile_is_empty(tile) {
+            fmt.print("|   ")
+        } else if .Controller_Is_Host in tile {
+            fmt.printf(
+                "|" + w_on_b + "%3o" + end, 
+                tile & ~{.Controller_Is_Host}
+            )
+        } else {
+            fmt.printf("|" + b_on_w + "%3o" + end, tile)
+        }
+    }
+    fmt.println("|")
+}
+```
+
+![Printed board](printedboard.png)
+
+Perfect. Every other pair of opening moves I tried works as expected. So now is the time for the **Ultimate Test**: transcribe the full example game!
+
+## The Example Game
 
 
 
