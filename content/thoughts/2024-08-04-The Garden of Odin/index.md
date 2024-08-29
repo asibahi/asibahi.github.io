@@ -272,7 +272,7 @@ Unfortunately, however, the Dominions board is decidedly *not* 64 cells, or any 
 ```odin
 Bitboard :: distinct [7]bit_set[0 ..< 32;u32] // 7 * 32 = 224
 PLAY_AREA: Bitboard : {~{}, ~{}, ~{}, ~{}, ~{}, ~{}, ~{25, 26, 27, 28, 29, 30, 31}}
-DATA_AREA: Bitboard : {{}, {}, {}, {}, {}, {}, {25, 26, 27, 28, 29, 30, 31}} // To use the extra bits for metadata
+DATA_AREA: Bitboard : {{}, {}, {}, {}, {}, {}, {25, 26, 27, 28, 29, 30, 31}} // Extra bits for metadata
 
 // helper procedure for common maths 
 @(private = "file")
@@ -283,7 +283,8 @@ bit_to_col_row :: proc(bit: int) -> (col, row: int) {
 }
 
 bb_set_bit :: proc(bb: ^Bitboard, bit: int) {
-    assert(0 <= bit && bit < CELL_COUNT) // assert here to allow an unchecked version for meta data
+    // assert here to allow an unchecked version for meta data
+    assert(0 <= bit && bit < CELL_COUNT)
     col, row := bit_to_col_row(bit)
     bb^[row] |= {col}
 }
@@ -299,7 +300,7 @@ Not to get ahead of the topic, but merging two of these bitboards (bitwise `OR`)
 ```odin
 group_capture :: proc(blessed, cursed: ^Group) {
     // ----- snipped
-    blessed.tiles |= cursed.tiles // the `tiles` field is a Bitboard.
+    blessed.tiles |= cursed.tiles // `tiles` field is a Bitboard
     // ----- snipped
 }
 ```
@@ -351,7 +352,7 @@ In my implementation of Havannah (linked earlier), I used the `slotmap` Rust cra
 use slotmap::{DefaultKey, Key, KeyData, SlotMap};
 
 // The Rust code does not need to manipulate the object in anyway.
-// So a type erased `*mut c_void` is all Rust knows. It is just a mutable pointer.
+// Type erased `*mut c_void` is all Rust knows: only a pointer.
 type SmItem = *mut core::ffi::c_void;
 type SmPtr = *mut SlotMap<DefaultKey, SmItem>;
 
@@ -444,7 +445,7 @@ Each group keeps track of its location (which hexes it occupies) and its liberti
 ```odin
 bb_card :: proc(bb: Bitboard) -> (ret: int) {
     temp := bb & PLAY_AREA
-    #unroll for i in 0 ..< 7 { // premature optimization, perhaps?
+    for i in 0 ..< 7 {
         ret += card(temp[i])
     }
     return
@@ -481,7 +482,8 @@ Note that the score is not recorded here. As with many aspects of this design, I
 There is also no history tracking, which needs lists of `Move`s and past  `Boards` and `Hand`s. The slotmap, being currently the only heap allocation, complicates undoing moves trivially, so a new `Game` object would be constructed from past raw data of boards and games. I decided to ignore history tracking for now.
 
 ```odin
-// A player's territory consists of the number of their pieces on the board minus the number of pieces they didn't place.
+// A player's territory consists of the number of their pieces
+// on the board minus the number of pieces they didn't place.
 game_get_score :: proc(game: ^Game) -> (guest, host: int) {
     for tile in game.board {
         (!tile_is_empty(tile)) or_continue
@@ -582,9 +584,9 @@ Game :: struct {
     legal_moves:           [dynamic]Move,
 }
 
-game_make_move :: proc(game: ^Game, candidate: Maybe(Move)) -> bool {
-    (game.status == .Ongoing) or_return // Game is over. What are you doing?
-    move, not_pass := candidate.?
+game_make_move :: proc(game: ^Game, try: Maybe(Move)) -> bool {
+    (game.status == .Ongoing) or_return // Game is over.
+    move, not_pass := try.?
 
     // legal move check
     (!not_pass ||
@@ -621,7 +623,7 @@ game_make_move :: proc(game: ^Game, candidate: Maybe(Move)) -> bool {
     hand_tile, removed := hand_remove_tile(active_hand, move.tile)
     assert(removed) // but verify
     game.board[hex_to_index(move.hex)] = hand_tile
-    move.tile = hand_tile // might be superfluous, but just to ascertain the Owner flags are set correctly
+    move.tile = hand_tile // probably superfluous.
 
     // TODO: update game state
 
@@ -662,7 +664,8 @@ group_section_init :: proc(move: Move, game: ^Game) -> (ret: Group, ok: bool = t
     }
 
     bb_set_bit(&ret.tiles, hex_to_index(move.hex))
-    bb_set_bit_unchecked(&ret.liberties, CELL_COUNT) // Special location for whether it is own section
+    // CELL_COUNT is where the Extended flag is.
+    bb_set_bit_unchecked(&ret.liberties, CELL_COUNT)
 
     return
 }
@@ -733,9 +736,16 @@ group_extend_or_merge :: proc(move: Move, game: ^Game) -> (ok: bool = true) {
             return false
         }
     }
-    assert(tile_liberties_count >= 0, "if this is broken there is a legality bug")
-    assert(nfg_cursor > 0, "This proc should not be called with no friendly neighbors")
-    (tile_liberties_count > 0) or_return     // if this is false then this might be a Suicide
+    assert(
+        tile_liberties_count >= 0, 
+        "if this is broken there is a legality bug"
+    )
+    assert(
+        nfg_cursor > 0, 
+        "This proc should not be called with no friendly neighbors"
+        )
+    // and if this is false then this might be a Suicide
+    (tile_liberties_count > 0) or_return   
 
     // == Are we the Baddies?
     friendly_grps: Slot_Map
@@ -759,7 +769,7 @@ group_extend_or_merge :: proc(move: Move, game: ^Game) -> (ok: bool = true) {
 
         blessed_grp.tiles |= grp.tiles
 
-        // Only if both Groups are in their own Section is the new Group in its own section
+        // Only if both Groups are extendable is the new one extendable
         play_area := PLAY_AREA & (blessed_grp.liberties | grp.liberties)
         data_area := DATA_AREA & (blessed_grp.liberties & grp.liberties)
         blessed_grp.liberties = play_area | data_area
@@ -837,7 +847,7 @@ Compiler driven development !!
 
 ### Back to `group_attach_to_friendlies`
 
-This above change makes the merging process much simpler. It also allowed me to delete the entire `bitboard.odin` file! Simply following the compiler's errors leads me to this version of `group_extend_or_merge`:
+This above change makes the merging process much simpler. It also allowed me to delete the entire `bitboard.odin` file! Following the compiler's errors leads me to this version of `group_extend_or_merge`:
 
 ```odin
 @(private)
@@ -1018,7 +1028,10 @@ game_update_state_inner :: proc(move: Move, game: ^Game) {
         }
     }
 
-    assert(tile_liberties_countdown >= 0, "if this is broken there is a legality bug")
+    assert(
+        tile_liberties_countdown >= 0,
+        "if this is broken there is a legality bug"
+    )
 
     // == Are we the Baddies?
     friendly_grps, enemy_grps: Slot_Map
@@ -1110,9 +1123,12 @@ game_update_state_inner :: proc(move: Move, game: ^Game) {
     // == go over surrounding enemy groups to see if they're dead.
     capture_occurance := false
     for key in surrounding_enemy_grps {
-        assert(slotmap_contains_key(enemy_grps, key), "Enemy slotmap does not have enemy Key")
+        assert(
+            slotmap_contains_key(enemy_grps, key), 
+            "Enemy slotmap does not have enemy Key"
+        )
         temp_grp := slotmap_get(enemy_grps, key)
-        temp_grp.state[hex_to_index(move.hex)] |= .Enemy_Connection // this is probably correct
+        temp_grp.state[hex_to_index(move.hex)] |= .Enemy_Connection // probably correct
 
         // Enemy Group is dead
         (group_life(temp_grp) == 0) or_continue
@@ -1177,7 +1193,10 @@ game_update_state_inner :: proc(move: Move, game: ^Game) {
     assert(len(new_family) > 0, "Oscillation")
 
     blessed_key = new_family[0]
-    assert(slotmap_contains_key(enemy_grps, blessed_key), "Enemy key is not in enemy map")
+    assert(
+        slotmap_contains_key(enemy_grps, blessed_key), 
+        "Enemy key is not in enemy map"
+    )
 
     blessed_grp = slotmap_get(enemy_grps, blessed_key)
     blessed_grp.state |= cursed_grp.state
@@ -1292,7 +1311,7 @@ game_regen_legal_moves :: proc(game: ^Game) {
             for flag in CONNECTION_FLAGS {
                 nbr_hex  := hex + flag_dir(flag)
                 nbr_idx, in_bounds := hex_to_index(nbr_hex)
-                nbr_tile := game.board[nbr_idx] // this is fine as `nbr_idx` is 0 when hex is out of bounds.
+                nbr_tile := game.board[nbr_idx] // nbr_idx == 0 when out
 
                 ((!in_bounds && flag not_in tile) ||
                  (in_bounds  && (tile_is_empty(nbr_tile) ||
@@ -1339,7 +1358,7 @@ Encoding these rules in the loop above is perhaps the best option. It would save
             for flag in CONNECTION_FLAGS {
                 nbr_hex  := hex + flag_dir(flag)
                 nbr_idx, in_bounds := hex_to_index(nbr_hex)
-                nbr_tile := game.board[nbr_idx] // this is fine as `nbr_idx` is 0 when hex is out of bounds.
+                nbr_tile := game.board[nbr_idx] // nbr_idx == 0 when out
 
                 ((!in_bounds && flag not_in tile) ||
                  (in_bounds && (tile_is_empty(nbr_tile) ||
@@ -1566,6 +1585,77 @@ main :: proc() {
 
 And voila! It gives two different keys of `128` and `192` (though I can't quite tell which is which) I caught a subtle bug while I was going through the code, which gave the need for a `valid` field in the key, so that it guarantees no valid key is `0`. 
 
+Testing with different pairs of first moves has gone swimmingly. Things get captured when they should and get rejected when they should. But testing a whole game is more difficult to verify looking at `stdout` printed arrays of numbers. A different visualization is required.
+
+## Printing the Board
+
+A hexagonal board does not quite lend itself to being nicely printed in the terminal. Even if the pieces were simple stonees (or chess pieces, available nicely as Unicode code points), However, solutions as old as time, or at least as old as monospaced fonts, exist.
+
+```
+# pointy representation
+# "Simply" shift the squares each row half a "square".
+# this is the coordinate system used in the code.
+
+      -3  |   |   |   |   |
+    -2  |   |   |   |   |   |
+  -1  |   |   |   |   |   |   |
+ 0  |   |   |   |   |   |   |   |
+   1  |   |   |   |   |   |   | 3
+     2  |   |   |   |   |   | 2
+       3  |   |   |   |   | 1
+            -3  -2  -1  0
+
+# or _pointier_, without coordinates.
+
+            / \ / \ / \ / \
+           |   |   |   |   |
+          / \ / \ / \ / \ / \
+         |   |   |   |   |   |
+        / \ / \ / \ / \ / \ / \ 
+       |   |   |   |   |   |   |
+      / \ / \ / \ / \ / \ / \ / \  
+     |   |   |   |   |   |   |   |
+      \ / \ / \ / \ / \ / \ / \ /
+       |   |   |   |   |   |   |
+        \ / \ / \ / \ / \ / \ / 
+         |   |   |   |   |   |
+          \ / \ / \ / \ / \ / 
+           |   |   |   |   |
+            \ / \ / \ / \ / 
+
+# flat representation
+# letter/number coordinates system
+                __
+             __/  \__
+          __/  \__/  \__
+       __/  \__/  \__/  \__
+      /  \__/  \__/  \__/  \
+     g\__/  \__/  \__/  \__/7
+      /  \__/  \__/  \__/  \
+     f\__/  \__/  \__/  \__/6
+      /  \__/  \__/  \__/  \
+     e\__/  \__/  \__/  \__/5
+      /  \__/  \__/  \__/  \
+     d\__/  \__/  \__/  \__/4
+        c\__/  \__/  \__/3
+           b\__/  \__/2
+              a\__/1
+```
+
+For [my implementation of Havannah](https://github.com/asibahi/w9l), I went with the Flat ASCII representation. However, since the directions are defined as `TOP_RIGHT`, `RIGHT`, etc, the Pointy representation is more appropriate. The compact version above is also, well, compact. Perfect for quick visualizations and debugging, especially that the board size in Dominions is much larger.
+
+Rendering the board is the easy part. But pieces in Dominions are distinct from each other, and it is not feasible to just *draw* the Tile's shape in the terminal. Firstly, that would be a very complex endeavour, and secondly it would balloon the drawing's size. But each tile can be represented, *is* represented, by a unique number from 1 to 63, plus a flag for the Owner. Using octal numbers, this can be made much nicer.
+
+Octal numbers today are mostly useless. Every language supports them because, well, they cost nothing to add, and they have one niche use in Unix file permissions. The *reason* they are useful for Unix file permissions is that these come in sets of three flags. So each set can be represented neatly by one octal digit (which stands for three bits).[^10]
+
+It just so happens that the Tiles in this game are also divided in two sets of three bits: three bits for the Right-side connections, and three to the Left-side connections, and two bits for Owner and Controller, [detailed earlier](#tiles). This makes it so the *right* digit represents the *right-side* connections, and the middle digit, to the *left* represents the *left* side connections. The rightmost digit is either `0` or `1` donating the Owner, and using ANSI magic, the terminal is colored by the Controller's color, which can be colored with the `ansi` module from Odin's core library. Neat, hah?
+
+While this is unusable for an actual playable application meant for humans (a Graphical interface is more suited), it is very useful for debugging the game's status at any given point.
+
+
+
+
+
 
 
 
@@ -1607,3 +1697,5 @@ And voila! It gives two different keys of `128` and `192` (though I can't quite 
 [^8]: Freeling does not specify in which order captures are processed. I am assuming here the order is the same as Go. Anyway, all this needs to be verified later once (if?) the engine is implemented.
 
 [^9]: I have been thinking of why Groups need to own their own data anyway? Group membership is clearly delineated in `Game.group_map` as it currently is (which would become `[CELL_COUNT]Group_Handle` under the new regime.) Liberties and Enemy Connections can be calculated and collected with a combination of `game.groups_map` and, well, `game.board`. But that's another day's battle.
+
+[^10]: A fuller explanation of file permissions, as irrelevant as they are to this article, [can be found here](https://docs.nersc.gov/filesystems/unix-file-permissions/).
