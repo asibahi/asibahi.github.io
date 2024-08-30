@@ -1692,6 +1692,112 @@ Perfect. Every other pair of opening moves I tried works as expected. So now is 
 
 ## The Example Game
 
+The full list of moves for the example game is [here, in a text box below the apploet](https://mindsports.nl/index.php/dagaz/131-workshops/955-dominions-example-workshop). Parsing the moves is a fun exercise, even if I will not use the eame notation eventually, so I will do that.
+
+The first task is to know how the coordinates map from the Mindsports representation to mine. This one is straightforward, if a bit tricky. The letters are the rows, or the `hex.y` cooredinate, so `A to Q` map to `8 to -8` (yes, backwards.) The columns map `1 to 17` to `-8 to 8`. The center hex goes from `i9` to `{0, 0}`.
+
+The Tile numbers do not map as neatly. `P63` is the same, but not the others. It is important to know how the directions map between both representations. Amusingly, I found out that the `P1` tile is *also* the same, but the Mindsports representation advances counter-clockwise, while mine does it clockwise. So `Top_Left`, above being `32`, is here marked as `2`, and so on. That gives us this:
+
+```odin
+tile_mindsports_id :: proc(id: u8, player: Player) -> (ret: Tile) {
+    if id & (1 << 0) > 0 do ret |= {.Top_Right}
+    if id & (1 << 1) > 0 do ret |= {.Top_Left}
+    if id & (1 << 2) > 0 do ret |= {.Left}
+    if id & (1 << 3) > 0 do ret |= {.Btm_Left}
+    if id & (1 << 4) > 0 do ret |= {.Btm_Right}
+    if id & (1 << 5) > 0 do ret |= {.Right}
+
+    switch player {
+    case .Host: ret |= HOST_FLAGS
+    case .Guest:
+    }
+
+    return
+}
+``
+
+And to parse each move:
+
+```odin
+import "core:strconv"
+
+move_mindsports_parse :: proc(str: string) -> (ret: Move, ok: bool) #optional_ok {
+    // move format: B[P12p15]
+
+    player: Player
+    switch str[0] {
+    case 'W': player = .Guest
+    case 'B': player = .Host
+    case: return {}, false
+    }
+
+    c := 3
+    tile: Tile
+
+    for len := 2; len >= 0; len -= 1 {
+        if len == 0 do return {}, false
+        if id, ok := strconv.parse_uint(str[c:][:len]); ok {
+            c += len
+            tile = tile_mindsports_id(u8(id), player)
+            break
+        }
+    }
+
+    row := N - i8(str[c] - 'a')
+        c += 1
+        
+    col: i8
+    for len := 2; len >= 0; len -= 1 {
+        if len == 0 do return {}, false
+        if res, ok := strconv.parse_uint(str[c:][:len]); ok {
+            col = i8(res) - N - 1
+            break
+        }
+    }
+
+    return {tile = tile, hex = {col, row}}, true
+}
+```
+
+Ok, now it is time to play through the game, where `MOVE_LIST` is a defined constant:
+
+```odin
+main :: proc() {
+    game := game_init()
+    defer game_destroy(game)
+
+    moves := strings.split(MOVE_LIST, ";")
+
+    for m, idx in moves {
+        move: Move
+        ok: bool
+        move, ok = move_mindsports_parse(m)
+        if !ok {
+            fmt.println("MOVE PARSER BROKE")
+            break
+        }
+
+        fmt.println(idx + 1, m)
+
+        ok = game_make_move(&game, move)
+        if !ok {
+            fmt.println("COULD NOT MAKE MOVE")
+            break
+        }
+
+        board_print(game.board)
+
+        buffer: [2]u8
+        os.read(os.stdin, buffer[:]) // advancing manually
+    }
+
+}
+```
+Now it is possible to go through the game move by move and compare, manually, the results of this program vs the "canonical" game client.
+
+## Second Bug
+
+
 
 
 
