@@ -1797,6 +1797,15 @@ Now it is possible to go through the game move by move and compare, manually, th
 
 ## Second Bug
 
+Running the engine hit an assertion at move 44. All the moves prior to that, including Suicides (amusingly enough), worked fine, but move 44 has the first Capture in the game. The move right after this position, where the first player captures at `g2`:
+
+![Dominions Position Board](./bug2board.png)
+![Dominions Poisition ASCII](./bug2ascii.png)
+
+(They are the same. You can even see the first player's suicides as black numbers starting with `0`).
+
+Here is the Capture logic again:
+
 
 
 
