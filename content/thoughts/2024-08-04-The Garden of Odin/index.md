@@ -1587,7 +1587,7 @@ And voila! It gives two different keys of `128` and `192` (though I can't quite 
 
 Testing with different pairs of first moves has gone swimmingly. Things get captured when they should and get rejected when they should. But testing a whole game is more difficult to verify looking at `stdout` printed arrays of numbers. A different visualization is required.
 
-## Printing the Board
+## Visualizing the Board
 
 A hexagonal board does not quite lend itself to being nicely printed in the terminal. Even if the pieces were simple stonees (or chess pieces, available nicely as Unicode code points), However, solutions as old as time, or at least as old as monospaced fonts, exist.
 
@@ -1804,9 +1804,106 @@ Running the engine hit an assertion at move 44. All the moves prior to that, inc
 
 (They are the same. You can even see the first player's suicides as black numbers starting with `0`).
 
-Here is the Capture logic again:
+The capture logic can be found [above](#game_update_state_inner---second-draft).  The failure happens here:
 
+```odin
+    // == merge level 2 surrounding friendlies into blessed group
+    for key in level_2_surrounding_friendlies {
+        temp_grp, ok := store_remove(friendly_grps, key)
+        assert(ok) // <--- right there.
 
+        blessed_grp.state |= temp_grp.state
+        blessed_grp.extendable &= temp_grp.extendable
+    }
+```
+
+I am not sure what this was supposed to accomplish, to be honest; and commenting it out, amusingly, progresses the game and resolves that move, until move 50 when it crashes.
+
+The crash this time happens right at a capture where the played Tile has no liberties left, and it connects to both an enemy group and a friedly group. The assert that fails right before that loop:
+
+```odin
+    // == go over surrounding enemy groups to see if they're dead.
+    capture_occurance := false
+    for key in surrounding_enemy_grps {
+        temp_grp, ok := store_get(enemy_grps, key)
+        assert(ok, "Enemy slotmap does not have enemy Key") // <--- right here
+        temp_grp.state[hex_to_index(move.hex)] |= .Enemy_Connection
+        // --- snip
+```
+
+I am not sure if I should comment this part out too. This seems important. Obviously, however, there is a problem in assigning and updating `Group` keys. Some keys are persistent in `group_map`, and are not getting updated as new `Group`s happen.
+
+So obviously the next step is to update the board visualization to include both Tiles *and* Group IDs.
+
+## Updated Board Visualization
+
+To print each row twice, each time with different data, *two* buffers are needed instead of printing directly. The two buffers are flushed out once per row.`string`s in Odin are immutable, and to have a string buffer, one needs to dip one's toes into the Odin core library, and use a `strings.Builder`.
+
+```odin
+board_print :: proc(board: Board, grp_map: [CELL_COUNT]Group_Handle) {
+    w_on_b :: ansi.CSI + ansi.BG_BLACK + ";" + ansi.FG_WHITE + ansi.SGR
+    b_on_w :: ansi.CSI + ansi.BG_WHITE + ";" + ansi.FG_BLACK + ansi.SGR
+    end :: ansi.CSI + ansi.RESET + ansi.SGR
+
+    tiles_buffer := strings.builder_make()
+    grps_buffer := strings.builder_make()
+
+    defer strings.builder_destroy(&tiles_buffer)
+    defer strings.builder_destroy(&grps_buffer)
+
+    row := min(i8)
+    for tile, idx in board {
+        hex := hex_from_index(idx)
+        if hex.y > row {
+            row = hex.y
+            if row != -N {
+                strings.write_string(&tiles_buffer, "|")
+                strings.write_string(&grps_buffer, "|")
+
+                fmt.println(strings.to_string(tiles_buffer))
+                fmt.println(strings.to_string(grps_buffer))
+
+                strings.builder_reset(&tiles_buffer)
+                strings.builder_reset(&grps_buffer)
+            }
+            for i in 0 ..< abs(row) {
+                strings.write_string(&tiles_buffer, "  ")
+                strings.write_string(&grps_buffer, "  ")
+            }
+        }
+        if tile_is_empty(tile) {
+            strings.write_string(&tiles_buffer, "|   ")
+            strings.write_string(&grps_buffer, "|   ")
+        } else if .Controller_Is_Host in tile {
+            strings.write_string(
+                &tiles_buffer, 
+                fmt.aprintf("|" + w_on_b + "%3o" + end, tile & ~{.Controller_Is_Host})
+            )
+            strings.write_string(
+                &grps_buffer,
+                fmt.aprintf("|" + w_on_b + "%3X" + end, transmute(u8)grp_map[idx])
+            )
+        } else {
+            strings.write_string(
+                &tiles_buffer, 
+                fmt.aprintf("|" + b_on_w + "%3o" + end, tile)
+            )
+            strings.write_string(
+                &grps_buffer,
+                fmt.aprintf("|" + b_on_w + "%3X" + end, transmute(u8)grp_map[idx])
+            )
+        }
+    }
+}
+```
+
+There you go, much better.
+
+![Visualization with Group IDs](./viz2ascii.png)
+
+## Back to the Second Bug
+
+Going back to move 44, (do all the groups seem to be correct?)
 
 
 
