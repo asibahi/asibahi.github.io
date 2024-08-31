@@ -318,7 +318,7 @@ bb_make_iter :: proc(bb: Bitboard) -> (it: Bitboard_Iterator) {
     return
 }
 
-// The function
+// The iterator procedure
 bb_iter :: proc(it: ^Bitboard_Iterator) -> (item: Hex, idx: int, ok: bool) {
     for i in it.next ..< CELL_COUNT {
         if bb_get_bit(it.bb, i) {
@@ -646,7 +646,7 @@ The key observation, I think, is that the game state change starts from the wher
 
 ### `group_section_init`
 
-The simplest, and shortest, game state change that is not a Pass, is a Tile that starts its own Section. This happens in two occasions: the first move, and whenever a Tile is only adjacent to other tiles via its Separated sides. This Tile by definition also starts a new Group. This function assumes it is only called when a move is legal.
+The simplest, and shortest, game state change that is not a Pass, is a Tile that starts its own Section. This happens in two occasions: the first move, and whenever a Tile is only adjacent to other tiles via its Separated sides. This Tile by definition also starts a new Group. This procedure assumes it is only called when a move is legal.
 
 ```odin
 @(private)
@@ -1227,7 +1227,7 @@ I attempted refactoring some of it out but I am not sure the result is necessari
 
 ## `game_regen_legal_moves`
 
-This is the current state of this function, which a lot is riding on:
+This is the current state of this procedure, which a lot is riding on:
 
 ```odin
 @(private)
@@ -1817,9 +1817,7 @@ The capture logic can be found [above](#game_update_state_inner---second-draft).
     }
 ```
 
-I am not sure what this was supposed to accomplish, to be honest; and commenting it out, amusingly, progresses the game and resolves that move, until move 50 when it crashes.
-
-The crash this time happens right at a capture where the played Tile has no liberties left, and it connects to both an enemy group and a friedly group. The assert that fails right before that loop:
+I am not sure what this was supposed to accomplish, to be honest; and commenting it out, amusingly, progresses the game and resolves that move, until move 50 when it crashes, but with wrong color distribution in the meantime. The assert that fails right before that loop:
 
 ```odin
     // == go over surrounding enemy groups to see if they're dead.
@@ -1831,7 +1829,7 @@ The crash this time happens right at a capture where the played Tile has no libe
         // --- snip
 ```
 
-I am not sure if I should comment this part out too. This seems important. Obviously, however, there is a problem in assigning and updating `Group` keys. Some keys are persistent in `group_map`, and are not getting updated as new `Group`s happen.
+This part seems too important to comment out, not to mention the wrong state. Obviously, however, there is a problem in assigning and updating `Group` keys. Some keys are persistent in `group_map`, and are not getting updated as new `Group`s happen.
 
 So obviously the next step is to update the board visualization to include both Tiles *and* Group IDs.
 
@@ -1903,7 +1901,140 @@ There you go, much better.
 
 ## Back to the Second Bug
 
-Going back to move 44, (do all the groups seem to be correct?)
+Honestly, I am not enjoying debugging this. I feel it would be easier to rewrite the whole thing with the learned assumptions. But persevere I must.
+
+Going back to move 44, where the first crash happened, all the groups that must be separate are separate, and all the ones that must be connected are connected. So, the easy assumption is that all the code paths triggered so far are correct.
+
+![Move 44 in the Terminal](./move44ascii.png)
+
+The offending next move, `W[P56q10]` does the following, physically:
+
+1. It connects to two enemy groups, `C7` and `C8`. And to one friendly group, `88`.
+2. Groups `C7` and `88` both lose all liberties, as does the new placed Tile.
+3. Enemy group `C7` is captured, as it loses all liberties and is connected, from the other side, to another friendly group `87`.
+4. The result of this is the newly placed tile, friendly groups `88`, `87`, and captured enemy group `C7` must now all be unified into one new group, ideally should be `88`.
+
+So what does the code actually *do*? Time to attach a debugger.
+
+### Setting up the Debugger
+
+Thankfully, due to dabbling in Rust, I already had LLDB installed as a VSCode extension. All is needed for it to work is to create a `launch.json` file (that's almost filled up already), and have it work on an executable built with `odin build . -debug`. Using a template from the Odin Discord server and adapting it to macOS (from Windows), I got the following two files in the `.vscode` directory:
+
+```json
+// launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "preLaunchTask": "Build",
+      "name": "Debug",
+      "program": "${workspaceFolder}/build/debug",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+    }
+  ]
+}
+```
+
+```json
+// tasks.json
+{
+  "version": "2.0.0",
+  "command": "",
+  "args": [],
+  "tasks": [
+    {
+      "label": "mkdir",
+      "type": "shell",
+      "command": "mkdir -p build", // <-- Does not work on Windows.
+    },
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "odin build . -debug -out:build/debug",
+      "group": "build"
+    },
+    {
+      "label": "Build", // <-- launch task runs this
+      "dependsOn": [
+        "mkdir",  // which runs this
+        "build"   // then this
+      ]
+    }
+  ]
+}
+```
+
+Now all I need to do is set breakpoints and click the VSCode button that says `Debug`. Yay for technology.
+
+But how to set a conditional breakpoint based on the move number when `game_make_move` does not know the move number?
+
+Normally, one would either have to set the move number as a global variable, *or* pass it on as an explicit parameter into every procedure, both are equally annoying. In Odin, I can just use the `context` system. The `Context` struct, which is passed implicitly by default to every Odin procedure, contains a `user_index` field which can be set to whatever. Inside `game_make_move` or any of its inner procedures, I simply check for `context.user_index`. 
+
+```odin
+    // inside main
+    context.user_index = idx
+    ok = game_make_move(&game, move)
+```
+```odin
+    // inside game_inner_update_state
+    for key in level_2_surrounding_friendlies {
+        if context.user_index >= 43 {
+            fmt.println(context.user_index) // <-- set breakpoint here
+        }
+        temp_grp, ok := store_remove(friendly_grps, key)
+        assert(ok)                          // <-- failing assertion
+        blessed_grp.state |= temp_grp.state
+        blessed_grp.extendable &= temp_grp.extendable
+    }
+```
+And that's how it looks when reached.
+
+![Debugger showing breakpoint. Beware the typo.](./ss_debugger.png)
+
+### Tedious Debugging
+
+This part is not cohesive writing. I will be listing my findings, but it might not be the easiest thing to follow.
+
+Going through the variables on the left of the debugger view, some things jump out. `level_2_surrounding_friendlies` has invalid keys. (Literally, `valid` is set to false.) What seems to be happening is that, earlier a bit, I am setting the just played tile as `.Enemy_Connection` for the neighboring enemy group. But when when the key is looked up in `game.groups_map`, it is still set to `0` as it is not added there yet.
+
+Adding `blessed_key` to `group_map` on creation passes the `game_make_move` procedure fine, but trips on another assertion in `game_regen_legal_moves`. Apparently, the new group is not in any group store. It is getting removed somehow. Using Odin magic like adding a `loc := #caller_location` parameter to `store_remove`, I can get it to print where that remove call was made. (And yes, I could have put in a breakpoint in there too.)
+
+```odin
+import "core:fmt"
+
+store_remove :: proc(
+    store: ^Group_Store, 
+    key: Group_Handle, 
+    loc := #caller_location // <-- Default value so call sites don't change.
+) -> (ret: Group, ok: bool) {
+    if key.idx == 8 && key.owner == .Guest { // <-- known to be the offending group
+        fmt.println("REMOVED HERE:", loc)
+    }
+    grp := store_get(store, key) or_return
+    defer grp.alive = false
+
+    return grp^, true
+}
+```
+
+Running it quickly shows that where it is removed is in that `level_2_surrounding_friendlies` loop. Where the first assert failed. Adding a condition to check for equality with `blessed_key` like the following, allows the game to hit no more asserts and continue to completion. Yay!
+
+```odin
+    for key in level_2_surrounding_friendlies {
+        if key == blessed_key do continue
+        temp_grp, ok := store_remove(friendly_grps, key)
+        assert(ok)
+
+        blessed_grp.state |= temp_grp.state
+        blessed_grp.extendable &= temp_grp.extendable
+    }
+```
+
+Now that the example game runs to completion without hitting any assertions, it is time to check of the state matches correctly thoughout.
+
 
 
 
