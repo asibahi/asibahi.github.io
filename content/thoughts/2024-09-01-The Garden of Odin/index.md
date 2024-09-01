@@ -2048,7 +2048,7 @@ Running it quickly shows it is removed in that `level_2_surrounding_friendlies` 
 
 Now that the example game runs to completion without hitting any assertions, time to check the state's correctness. The final position in the game seems to be all correct, so I will consder this implementation now bug free. Maybe for part 2.
 
-## WHat's left?
+## What's left?
 
 Work is not done on this by any means, even if I ascertained it is 100% bug free. (the legal move genrator is not thoroughly tested really.) But I have spent a month, on and off, on this and my wife is frankly sick of me. So here is a list of what is left to implement in round 2:
 
