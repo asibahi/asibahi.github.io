@@ -2053,7 +2053,7 @@ Now that the example game runs to completion without hitting any assertions, tim
 Work is not done on this by any means, even if I ascertained it is 100% bug free. (the legal move genrator is not thoroughly tested really.) But I have spent a month, on and off, on this and my wife is frankly sick of me. So here is a list of what is left to implement in round 2:
 
 1. Undoing Moves: Necessary for engine implementations, and easy in theory. All is needed really is to copy the game's state into a dynamic array of previous game states. To save memory, only saving previous `Board`s is required, as they actually have enough data to generate all the remaining fields.
-2. An interactive interface. A way to interact with the game outside of writing procedure calls in `main()` Either through a wasm module or a cLI interface, or a common interface either one can use. 
+2. An interactive interface. A way to interact with the game outside of writing procedure calls in `main()` Either through a wasm module or a CLI interface, or a common interface either one can use. 
 3. Nicer, graphic visualization. The ASCII visualization is useful for debugging, but it is not actually playable. This game needs beautiful art and a beautiful Graphical User Interface. 
 
 ## Lessons Learned
