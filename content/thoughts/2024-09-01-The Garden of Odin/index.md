@@ -478,7 +478,7 @@ Game :: struct {
 
 Note that the score is not recorded here. As with many aspects of this design, I am currently unsure if it something should be tracked and updated individually with each move, or something calculated from the game state at any given moment.
 
-There is also no history tracking, which needs lists of `Move`s and past  `Boards` and `Hand`s. The slotmap, being currently the only heap allocation, complicates undoing moves trivially, so a new `Game` object would be constructed from past raw data of boards and games. I decided to ignore history tracking for now.
+There is also no history tracking, which needs lists of `Move`s and past  `Board`s and `Hand`s. The slotmap, being currently the only heap allocation, complicates undoing moves trivially, so a new `Game` object would be constructed from past raw data of boards and games. I decided to ignore history tracking for now.
 
 ```odin
 // A player's territory consists of the number of their pieces
@@ -1453,11 +1453,11 @@ Using a Rust crate for this functionality has a couple of pain points already:
 
 So now what? Is a slotmap-like data structure even the correct decision at all, actually? Slotmap's advantage is reusing existing allocations for deleted items, while *not* reusing the handles/indices. But if it lives all on the stack, say through a `[CELL_COUNT]Group` array, it is not possible to grow memory dynamically as needed (since it is all statically allocated), and one would have to allocate for the worst case scenario *anyway* removing the main advantage there.
 
-One option is to put *all* Groups, from both sides, in one array (of size 126, as established), and use indices into that array as keys, and simply stop using that index whenever a Group dies. While a real game is never getting to 126 Groups at once, and there is no game database of played Dominions games to analyze and determine the maximum number of Groups in a real game is. Using [Mindsport's applet](https://mindsports.nl/index.php/dagaz/954-dominions), I managed to get to about 92 individual living "groups" at the same time before I got bored.
+One option is to put Groups in a fixed array, and use indices into that array as keys, and simply stop using that index whenever a Group dies. While a real game is never getting to 126 Groups at once, and there is no game database of played Dominions games to analyze and determine the maximum number of Groups in a real game is. Using [Mindsport's applet](https://mindsports.nl/index.php/dagaz/954-dominions), I managed to get to about 92 individual living "groups" at the same time before I got bored.
 
 How would this look like, though? Separate arrays, one for each player? One array for both? If the second, how to distinguish between friendly and enemy groups storage?
 
-My current thinking is to borrow the handle/index++ idea and invent, essentiall my own handle. Honestly I just want an excuse to use Odin's bit fields.
+My current thinking is to borrow the handle/index++ idea and invent, essentially, my own handle. Honestly I just want an excuse to use Odin's bit fields.
 
 ```odin
 Group_Handle :: bit_field u8 {
@@ -1485,7 +1485,7 @@ Group_Store :: // todo
 ```
 The field `_padding` is there to suppress a compiler warning about boolean-only bit fields being a terrible idea.
 
-Mind you `Rethought_Group` has two Odin features Ginger Bill dislikes using: `using` and `bit_field`s, and uses them together, with an anonymous `bit_field` to boot. (I am actually pleasantly surprised this compiles and works at all.) My goal here is to essentially cram both of `extendable` and `alive` booleans into one byte, and they do not really make sense to me as their own type, and keep the nice ergonomics of using them. The advised/Ginger Bill-authorized way to write this is the following: 
+Mind you `Rethought_Group` has two Odin features Ginger Bill dislikes using: `using` and `bool`-only `bit_field`s, and uses them together, with an anonymous `bit_field` to boot. (I am actually pleasantly surprised this compiles and works at all.) My goal here is to essentially cram both of `extendable` and `alive` booleans into one byte, and they do not really make sense to me as their own type, and keep the nice ergonomics of using them. The advised/Ginger Bill-authorized way to write this is the following: 
 
 ```odin
 Group_Status :: enum u8 {
@@ -2060,12 +2060,12 @@ Work is not done on this by any means, even if I ascertained it is 100% bug free
 
 So throughout working on this article (for almost a whole month) I advanced my knowledge about the following:
 
-1. The Oding programming language,
+1. The Odin programming language,
 2. Interop between Odin and Rust (and any other language really),
 3. HTML and CSS and Zola temptlating (in setting up this website),
 4. Basic usage of LLDB debugging,
 
-So,  this was a fun ride. But it is time to move something else. 
+So,  this was a fun ride. But it is time to move on to something else. 
 
 The code here is in the [bustan repositry](https://github.com/asibahi/bustan). You can see the evolution of the code, and much of what is in this article, through the git history.
 

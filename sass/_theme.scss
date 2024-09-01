@@ -29,6 +29,7 @@ $code: rgb(117, 94, 159);
         border-left: 2px solid $secondary;
     }
 
+    li code,
     p code {
         color: $code;
     }
