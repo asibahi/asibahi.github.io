@@ -3,6 +3,7 @@ $background: #ffffff;
 $secondary: gray;
 $tertiary: #dddddd;
 $accent: rgb(203, 132, 0);
+$code: rgb(117, 94, 159);
 
 
 @mixin light-theme {
@@ -28,8 +29,8 @@ $accent: rgb(203, 132, 0);
         border-left: 2px solid $secondary;
     }
 
-    code {
-        background-color: transparent;
+    p code {
+        color: $code;
     }
 
     .footnote-definition sup {

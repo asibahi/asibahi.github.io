@@ -970,7 +970,7 @@ So why separate it at all? The idea was it would simplify handling, but it does 
 4. Iterate over neighboring Enemy Groups, if any have a Liberty count of 0: [^8]
     1. They are flipped and merged with the Blessed Group.
     2. Iterate over connections of the Blessed Group, and merge with it any friendly Groups found.
-    3. Move is over. (This is because we already filtered for legal moves, or a check for Oscillation would be needed.)
+    3. Move is over. (This is because legal moves are already screened, or a check for Oscillation would be needed.)
 5. The Blessed Group is checked for Liberty count. If it is 0, it is captured (flipped) and merged with its surrounding Enemy Groups.
 6. Done
 
@@ -1106,7 +1106,7 @@ game_update_state_inner :: proc(move: Move, game: ^Game) {
         }
     }
 
-    // == if there are no surrounding enemy groups there is nothing more to do
+    // == if there are no surrounding enemy groups there is nothing to do
     if len(surrounding_enemy_grps) == 0 {
         assert(
             group_life(blessed_grp) > 0,
@@ -1128,7 +1128,7 @@ game_update_state_inner :: proc(move: Move, game: ^Game) {
             "Enemy slotmap does not have enemy Key"
         )
         temp_grp := slotmap_get(enemy_grps, key)
-        temp_grp.state[hex_to_index(move.hex)] |= .Enemy_Connection // probably correct
+        temp_grp.state[hex_to_index(move.hex)] |= .Enemy_Connection // spoiler: there be bugs
 
         // Enemy Group is dead
         (group_life(temp_grp) == 0) or_continue
@@ -1470,7 +1470,7 @@ Group_Handle :: bit_field u8 {
 
 ```
 
-The `idx` here cannot, ever, be more than 63, which is all the address space we need for worst case scenario, and a little bit more. The `owner` field is one bit, either this player or that player. The last bit is a funny one: it is just to allow using the zero value of the key (where `valid` is false), as a sentinel value for an empty slot. At first, I considered having the `extendable` boolean I have had in `Group`, but that just makes bookkeeping and updating `Group` status that much harder. [^9] So now how about this?
+The `idx` here cannot, ever, be more than 63, which is all the address space needed for the worst case scenario, and a little bit more. The `owner` field is one bit, either this player or that player. The last bit is a funny one: it is just to allow using the zero value of the key (where `valid` is false), as a sentinel value for an empty slot. At first, I considered having the `extendable` boolean I have had in `Group`, but that just makes bookkeeping and updating `Group` status that much harder. [^9] So now how about this?
 
 ```odin
 Rethought_Group :: struct {
@@ -1714,7 +1714,7 @@ tile_mindsports_id :: proc(id: u8, player: Player) -> (ret: Tile) {
 
     return
 }
-``
+```
 
 And to parse each move:
 
@@ -1790,7 +1790,6 @@ main :: proc() {
         buffer: [2]u8
         os.read(os.stdin, buffer[:]) // advancing manually
     }
-
 }
 ```
 Now it is possible to go through the game move by move and compare, manually, the results of this program vs the "canonical" game client.
@@ -1804,7 +1803,7 @@ Running the engine hit an assertion at move 44. All the moves prior to that, inc
 
 (They are the same. You can even see the first player's suicides as black numbers starting with `0`).
 
-The capture logic can be found [above](#game_update_state_inner---second-draft).  The failure happens here:
+The capture logic can be found [above](#game-update-state-inner-second-draft). The failure happens here:
 
 ```odin
     // == merge level 2 surrounding friendlies into blessed group
@@ -1817,7 +1816,7 @@ The capture logic can be found [above](#game_update_state_inner---second-draft).
     }
 ```
 
-I am not sure what this was supposed to accomplish, to be honest; and commenting it out, amusingly, progresses the game and resolves that move, until move 50 when it crashes, but with wrong color distribution in the meantime. The assert that fails right before that loop:
+I am not sure what this was supposed to accomplish, to be honest; and commenting it out, amusingly, progresses the game and resolves that move, until move 50 when it crashes. Unfortunatly between both moves the state is *all wrong*. Either way, the assert that fails is slightly ahead of that loop.
 
 ```odin
     // == go over surrounding enemy groups to see if they're dead.
@@ -1829,7 +1828,7 @@ I am not sure what this was supposed to accomplish, to be honest; and commenting
         // --- snip
 ```
 
-This part seems too important to comment out, not to mention the wrong state. Obviously, however, there is a problem in assigning and updating `Group` keys. Some keys are persistent in `group_map`, and are not getting updated as new `Group`s happen.
+This part seems too important to comment out, not to mention the all wrong state. Obviously, however, there is a problem in assigning and updating `Group` keys. Probably some keys are persistent in `group_map`, and are not getting updated as new `Group`s happen.
 
 So obviously the next step is to update the board visualization to include both Tiles *and* Group IDs.
 
@@ -1875,11 +1874,17 @@ board_print :: proc(board: Board, grp_map: [CELL_COUNT]Group_Handle) {
         } else if .Controller_Is_Host in tile {
             strings.write_string(
                 &tiles_buffer, 
-                fmt.aprintf("|" + w_on_b + "%3o" + end, tile & ~{.Controller_Is_Host})
+                fmt.aprintf(
+                    "|" + w_on_b + "%3o" + end,
+                    tile & ~{.Controller_Is_Host}
+                )
             )
             strings.write_string(
                 &grps_buffer,
-                fmt.aprintf("|" + w_on_b + "%3X" + end, transmute(u8)grp_map[idx])
+                fmt.aprintf(
+                    "|" + w_on_b + "%3X" + end,
+                    transmute(u8)grp_map[idx]
+                )
             )
         } else {
             strings.write_string(
@@ -1888,7 +1893,10 @@ board_print :: proc(board: Board, grp_map: [CELL_COUNT]Group_Handle) {
             )
             strings.write_string(
                 &grps_buffer,
-                fmt.aprintf("|" + b_on_w + "%3X" + end, transmute(u8)grp_map[idx])
+                fmt.aprintf(
+                    "|" + b_on_w + "%3X" + end,
+                    transmute(u8)grp_map[idx]
+                )
             )
         }
     }
@@ -1903,7 +1911,7 @@ There you go, much better.
 
 Honestly, I am not enjoying debugging this. I feel it would be easier to rewrite the whole thing with the learned assumptions. But persevere I must.
 
-Going back to move 44, where the first crash happened, all the groups that must be separate are separate, and all the ones that must be connected are connected. So, the easy assumption is that all the code paths triggered so far are correct.
+Going back to move 44, where the first crash happened: All the groups that must be separate are separate, and all the ones that must be connected are connected. So, the easy assumption is that all the code paths triggered so far are correct.
 
 ![Move 44 in the Terminal](./move44ascii.png)
 
@@ -1914,11 +1922,17 @@ The offending next move, `W[P56q10]` does the following, physically:
 3. Enemy group `C7` is captured, as it loses all liberties and is connected, from the other side, to another friendly group `87`.
 4. The result of this is the newly placed tile, friendly groups `88`, `87`, and captured enemy group `C7` must now all be unified into one new group, ideally should be `88`.
 
-So what does the code actually *do*? Time to attach a debugger.
+So what does the code actually *do*? Time to use a debugger.
 
 ### Setting up the Debugger
 
-Thankfully, due to dabbling in Rust, I already had LLDB installed as a VSCode extension. All is needed for it to work is to create a `launch.json` file (that's almost filled up already), and have it work on an executable built with `odin build . -debug`. Using a template from the Odin Discord server and adapting it to macOS (from Windows), I got the following two files in the `.vscode` directory:
+Thankfully, due to dabbling in Rust, I already had LLDB installed as a VSCode extension. All is needed for it to work is to create a `launch.json` file (that's almost filled up already), and have it work on an executable built with: 
+
+```sh
+$ odin build . -debug
+```
+
+Using a template from the Odin Discord server and adapting it to macOS (from Windows), I got the following two files in the `.vscode` directory:
 
 ```json
 // launch.json
@@ -2010,7 +2024,7 @@ store_remove :: proc(
     key: Group_Handle, 
     loc := #caller_location // <-- Default value so call sites don't change.
 ) -> (ret: Group, ok: bool) {
-    if key.idx == 8 && key.owner == .Guest { // <-- known to be the offending group
+    if key.idx == 8 && key.owner == .Guest { // <-- the offending group
         fmt.println("REMOVED HERE:", loc)
     }
     grp := store_get(store, key) or_return
@@ -2020,7 +2034,7 @@ store_remove :: proc(
 }
 ```
 
-Running it quickly shows that where it is removed is in that `level_2_surrounding_friendlies` loop. Where the first assert failed. Adding a condition to check for equality with `blessed_key` like the following, allows the game to hit no more asserts and continue to completion. Yay!
+Running it quickly shows it is removed in that `level_2_surrounding_friendlies` loop. Where the first assert failed. Adding a condition to check for equality with `blessed_key` like the following, allows the game to hit no more asserts and continue to completion. Yay!
 
 ```odin
     for key in level_2_surrounding_friendlies {
