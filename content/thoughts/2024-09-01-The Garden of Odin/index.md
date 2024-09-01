@@ -1,22 +1,21 @@
 +++
 title = "The Garden of Odin"
 description = "An Odin implementation of an abstract board game."
-draft = true
 +++
 
 In an escape from the worries of life, I have been reading recently into the [Odin programming language](https://odin-lang.org). I wanted to learn something that is closer to the metal than Rust, and Odin seems nice.
 
-For a project to do with the language, I figured I would build a library of sorts for the abstract board game [Domnions, by Christian Freeling](https://mindsports.nl/index.php/the-pit/526-dominions). ([Sensei's Library link](https://senseis.xmp.net/?Dominions)). The game can be described as a Go variant with distinct pieces (as opposed to Go itself where every "piece" is identical.
+For a project to do with the language, I figured I would build a library for the abstract board game [Domnions, by Christian Freeling](https://mindsports.nl/index.php/the-pit/526-dominions). ([Sensei's Library link](https://senseis.xmp.net/?Dominions)). The game can be described as a Go variant with distinct pieces (as opposed to Go itself where every "piece" is identical.
 
 The game is *weird*. It is much less known than Freeling's other games like Havannah (for which I wrote [an implementation for in Rust](https://github.com/asibahi/w9l)) and Grand Chess (which I designed and built a physical set for). Even Freeling himself does not put much stock into it, and is more interested in the tile set itself (which he calls [the China Labyrinth](https://mindsports.nl/index.php/puzzles/tilings/china-labyrinth/), even though they have nothing to do with China) than the game. He made other games with the tile set which you can find by browsing his site.
 
-In code and my handwirtten notes, I call the tile set **Bustan**: Arabic for Garden (hence the name of this Article). Variety, branches, paths, and fences all make gardens seem like an appropriate metaphor for what is going on.
+In code and my handwirtten notes, I call the tile set **Bustan**: Arabic for Garden (hence the name of this article). Variety, branches, paths, and fences all make gardens seem like an appropriate metaphor for what is going on.
 
 This is the sample game Freeling posted on his website:
 
 ![A game in progress of Dominions](dominions.png)
 
-I am writing this post as a way to organize my thoughts on how to represent the game in code. It is a semi organized, semi-chronologically-sorted brain dump: I am writing it as I iterate over the code. I will be talking mostly about how to represent the game in code form, leaving the rules for later.
+I am writing this post as a way to organize my thoughts on how to represent the game in code. It is a semi organized, semi-chronologically-sorted brain dump: I am writing it as I iterate over the code. I will be talking mostly about how to represent the game in code form, leaving the rules for later. The end result can be found in the git history of the [`bustan` repositry](https://github.com/asibahi/bustan).
 
 ## Tiles
 
@@ -2047,8 +2046,30 @@ Running it quickly shows it is removed in that `level_2_surrounding_friendlies` 
     }
 ```
 
-Now that the example game runs to completion without hitting any assertions, it is time to check of the state matches correctly thoughout.
+Now that the example game runs to completion without hitting any assertions, time to check the state's correctness. The final position in the game seems to be all correct, so I will consder this implementation now bug free. Maybe for part 2.
 
+## WHat's left?
+
+Work is not done on this by any means, even if I ascertained it is 100% bug free. (the legal move genrator is not thoroughly tested really.) But I have spent a month, on and off, on this and my wife is frankly sick of me. So here is a list of what is left to implement in round 2:
+
+1. Undoing Moves: Necessary for engine implementations, and easy in theory. All is needed really is to copy the game's state into a dynamic array of previous game states. To save memory, only saving previous `Board`s is required, as they actually have enough data to generate all the remaining fields.
+2. An interactive interface. A way to interact with the game outside of writing procedure calls in `main()` Either through a wasm module or a cLI interface, or a common interface either one can use. 
+3. Nicer, graphic visualization. The ASCII visualization is useful for debugging, but it is not actually playable. This game needs beautiful art and a beautiful Graphical User Interface. 
+
+## Lessons Learned
+
+So throughout working on this article (for almost a whole month) I advanced my knowledge about the following:
+
+1. The Oding programming language,
+2. Interop between Odin and Rust (and any other language really),
+3. HTML and CSS and Zola temptlating (in setting up this website),
+4. Basic usage of LLDB debugging,
+
+So,  this was a fun ride. But it is time to move something else. 
+
+The code here is in the [bustan repositry](https://github.com/asibahi/bustan). You can see the evolution of the code, and much of what is in this article, through the git history.
+
+Until later.
 
 
 
