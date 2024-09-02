@@ -1691,7 +1691,7 @@ Perfect. Every other pair of opening moves I tried works as expected. So now is 
 
 ## The Example Game
 
-The full list of moves for the example game is [here, in a text box below the apploet](https://mindsports.nl/index.php/dagaz/131-workshops/955-dominions-example-workshop). Parsing the moves is a fun exercise, even if I will not use the eame notation eventually, so I will do that.
+The full list of moves for the example game is [here, in the source code of the game's page](https://mindsports.nl/index.php/the-pit/526-dominions). Parsing the moves is a fun exercise, even if I will not use the eame notation eventually, so I will do that.
 
 The first task is to know how the coordinates map from the Mindsports representation to mine. This one is straightforward, if a bit tricky. The letters are the rows, or the `hex.y` cooredinate, so `A to Q` map to `8 to -8` (yes, backwards.) The columns map `1 to 17` to `-8 to 8`. The center hex goes from `i9` to `{0, 0}`.
 
