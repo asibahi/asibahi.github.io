@@ -1853,8 +1853,8 @@ board_print :: proc(board: Board, grp_map: [CELL_COUNT]Group_Handle) {
         if hex.y > row {
             row = hex.y
             if row != -N {
-                strings.write_string(&tiles_buffer, "|")
-                strings.write_string(&grps_buffer, "|")
+                fmt.sbprint(&tiles_buffer, "|")
+                fmt.sbprint(&grps_buffer, "|")
 
                 fmt.println(strings.to_string(tiles_buffer))
                 fmt.println(strings.to_string(grps_buffer))
@@ -1862,40 +1862,35 @@ board_print :: proc(board: Board, grp_map: [CELL_COUNT]Group_Handle) {
                 strings.builder_reset(&tiles_buffer)
                 strings.builder_reset(&grps_buffer)
             }
-            for i in 0 ..< abs(row) {
-                strings.write_string(&tiles_buffer, "  ")
-                strings.write_string(&grps_buffer, "  ")
+            for _ in 0 ..< abs(row) {
+                fmt.sbprint(&tiles_buffer, "  ")
+                fmt.sbprint(&grps_buffer, "  ")
             }
         }
         if tile_is_empty(tile) {
-            strings.write_string(&tiles_buffer, "|   ")
-            strings.write_string(&grps_buffer, "|   ")
+            fmt.sbprint(&tiles_buffer, "|   ")
+            fmt.sbprint(&grps_buffer, "|   ")
         } else if .Controller_Is_Host in tile {
-            strings.write_string(
-                &tiles_buffer, 
-                fmt.aprintf(
-                    "|" + w_on_b + "%3o" + end,
-                    tile & ~{.Controller_Is_Host}
-                )
+            fmt.sbprintf(
+                &tiles_buffer,
+                "|" + w_on_b + "%3o" + end,
+                tile & ~{.Controller_Is_Host}
             )
-            strings.write_string(
+            fmt.sbprintf(
                 &grps_buffer,
-                fmt.aprintf(
-                    "|" + w_on_b + "%3X" + end,
-                    transmute(u8)grp_map[idx]
-                )
+                "|" + w_on_b + "%3X" + end,
+                transmute(u8)grp_map[idx]
             )
         } else {
-            strings.write_string(
-                &tiles_buffer, 
-                fmt.aprintf("|" + b_on_w + "%3o" + end, tile)
+            fmt.sbprintf(
+                &tiles_buffer,
+                "|" + b_on_w + "%3o" + end,
+                tile
             )
-            strings.write_string(
+            fmt.sbprintf(
                 &grps_buffer,
-                fmt.aprintf(
-                    "|" + b_on_w + "%3X" + end,
-                    transmute(u8)grp_map[idx]
-                )
+                "|" + b_on_w + "%3X" + end,
+                transmute(u8)grp_map[idx]
             )
         }
     }
