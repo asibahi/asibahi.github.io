@@ -1,6 +1,6 @@
 +++
 title = "Knuth's Linebreaking Algorithm for non-Programmers"
-
+date = "2023-04-02"
 +++
 
 I am an architect (the physical kind), not a programmer, and I am interested in Typesetting and fonts. The common wisdom online is that Knuth's linebreaking algorithm, implemented for TeX some time back, is the be all end all way to typeset text on a printed page. But there are no clear explanations of what the algorithm *is*, beyond handwavey explanations of boxes and glue and penalties. I, being a lemming, strove to understand the algorithm, and I believe I can explain it succinctly. I promise not to use the phrase "Dynamic Programming".
@@ -229,4 +229,4 @@ fn build_line(input: ShapedText,
 ```
 I hope you enjoyed this read and that you found it educational. In the next post I will write how the `build_line()` function can be adapted for non-Latin scripts (namely Arabic because that's all I know).
 
-*Edit on 12-Apr-2023: [Here is Part 2](@/thoughts/2023-04-12-Practical%20Arabic%20Justification/index.md)*
+*Edit on 12-Apr-2023: [Here is Part 2](@/thoughts/Practical%20Arabic%20Justification/index.md)*

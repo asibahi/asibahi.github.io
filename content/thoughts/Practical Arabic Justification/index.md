@@ -1,9 +1,9 @@
 +++
 title = "Thoughts on Arabic Justification"
-
+date = "2023-04-12"
 +++
 
-For the tl;dr, skip to [Priority](#priority-list). This article is a follow up to [this one](@/thoughts/2023-04-02-Linebreaking/index.md).
+For the tl;dr, skip to [Priority](#priority-list). This article is a follow up to [this one](@/thoughts/Linebreaking/index.md).
 
 ## Background Reading 
 Here are some links that you might want to look at:
@@ -107,7 +107,7 @@ First of all you need whether the font has `jalt`s or not. You could even ask th
 
 For example, if the user specifies using `ss16`, `ss17`, `ss18`, `ss19`, and `ss20` for justification, in this order, use those. If they don't, use `jalt` if available.
 
-Pseuorustcode time! I will be adjusting on the `build_line()` function from the [linebreaking](@/thoughts/2023-04-02-Linebreaking/index.md) article.
+Pseuorustcode time! I will be adjusting on the `build_line()` function from the [linebreaking](@/thoughts/Linebreaking/index.md) article.
 
 ```rust
 fn build_line(input: ShapedText,
