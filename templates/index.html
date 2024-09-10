@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html {% if page.extra.arabic %} dir="rtl" {% else %} dir="ltr" {% endif %}> <!-- 1-->
+<html {% if page.extra.arabic %} dir="rtl" {% else %} dir="ltr" {% endif %}>
+
+<!-- This site was built using getzola.com and heavily based on the Hook theme(https://www.getzola.org/themes/hook/) -->
 
 <head>
     <meta charset="utf-8">
@@ -11,10 +13,10 @@
     <link rel="stylesheet" href="{{ get_url(path='style.css', cachebust=true) }}">
     {% endblock extra_head %}
     {% block feed_link %}
-    {% if config.generate_feed %} <!-- 2-->
+    {% if config.generate_feed %} 
     <link rel="alternate" type="application/atom+xml" title="Feed"
         href="{{ get_url(path=config.feed_filename, trailing_slash=false) }}">
-    {% endif %} <!-- 2-->
+    {% endif %} 
     {% endblock %}
 </head>
 
@@ -24,8 +26,6 @@
         <h1>{{ config.title }}</h1>
         {{ config.extra.blurp }} <br>
     </header>
-
-
     {% endblock header %}
     {% block content %}
     <main>
@@ -40,15 +40,14 @@
             {% endif %}
             {% endif %}
 
-            {% if section.pages %} <!-- 3-->
-
+            {% if section.pages %}
             <ul class="index">
                 {% for post in section.pages | slice(end=10) %}
 
                 <li {% if post.extra.arabic %} dir="rtl" {% endif %}>
                     <a href="{{ post.permalink }}">{{ post.title }}</a>
                     <small class="secondary">
-                        - {{post.date}}
+                        {% if post.date %} - {{post.date}} {%  endif %}
                         {% if post.description %}<br>{{ post.description }}{% endif %}
                     </small>
                 </li>
@@ -56,16 +55,16 @@
                 {% endfor %}
             </ul>
 
-            {% if section.pages | length > 10 %} <!-- 6-->
+            {% if section.pages | length > 10 %}
             <p><a href="{{ blog.permalink }}">More</a></p>
-            {% endif %} <!-- 6-->
+            {% endif %}
 
-            {% endif %} <!-- 3-->
+            {% endif %}
             {% endfor %}
     </main>
 
     {% set linked_pages = content.pages | filter(attribute="extra.in_header") %}
-    {% if config.extra.links or linked_pages %} <!-- 7-->
+    {% if config.extra.links or linked_pages %}
     <footer> <small>
             {% for link in config.extra.links %}
             <a class="mylink" href="{{ link.href }}" rel="me">{{ link.title }}</a>
@@ -74,8 +73,7 @@
             <a class="mylink" href="{{ page.permalink }}">{{ page.title }}</a>
             {% endfor %}
         </small> </footer>
-    {% endif %} <!-- 7-->
+    {% endif %}
     {% endblock content %}
 </body>
-
 </html>
