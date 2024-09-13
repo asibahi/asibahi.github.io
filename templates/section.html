@@ -2,24 +2,22 @@
 
 {% block title %}{{ config.title }} | {{ section.title }}{% endblock title %}
 
+{% block h1 %}<h1>{{ section.title }}</h1>{% endblock h1%}
+
 {% block content %}
 <main>
-    <h1>{{ section.title }}</h1>
     {% if section.pages %}
-    {% for year, posts in section.pages | group_by(attribute="year") %}
-    <h2>{{ year }}</h2>
-    <ul class = "index">
-        {% for post in posts %}
-        <li {% if post.extra.arabic %} dir="rtl" {% endif %}>
-            <a href="{{ post.permalink }}">{{ post.title }}</a>
-            <small class="secondary">
-                - {{post.date}}
-                {% if post.description %}<br>{{ post.description }}{% endif %}
-            </small>
-        </li>
-        {% endfor %}
-    </ul>
-    {% endfor %}
+            <ul class="index">
+                {% for post in section.pages %}
+                <li {% if post.extra.arabic %} dir="rtl" {% endif %}>
+                    <a href="{{ post.permalink }}">{{ post.title }}</a>
+                    <small class="secondary">
+                        {% if post.date %} - {{post.date}} {%  endif %}
+                        {% if post.description %}<br>{{ post.description }}{% endif %}
+                    </small>
+                </li>
+                {% endfor %}
+            </ul>
     {% else %}
     <p>No posts yet.</p>
     {% endif %}

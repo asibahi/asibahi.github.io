@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html {% if page.extra.arabic %} dir="rtl" {% else %} dir="ltr" {% endif %}>
 
-<!-- This site was built using getzola.com and heavily based on the Hook theme(https://www.getzola.org/themes/hook/) -->
+<!-- This site was built using Zola (getzola.com) and heavily based on the Hook theme (https://www.getzola.org/themes/hook/) -->
 
 <head>
     <meta charset="utf-8">
@@ -9,15 +9,7 @@
     <meta name="description"
         content="{% block description %}{{ section.description | default(value=config.description) }}{% endblock description %}">
     <title>{% block title %}{{ config.title }}{% endblock title %}</title>
-    {% block extra_head %}
     <link rel="stylesheet" href="{{ get_url(path='style.css', cachebust=true) }}">
-    {% endblock extra_head %}
-    {% block feed_link %}
-    {% if config.generate_feed %} 
-    <link rel="alternate" type="application/atom+xml" title="Feed"
-        href="{{ get_url(path=config.feed_filename, trailing_slash=false) }}">
-    {% endif %} 
-    {% endblock %}
 </head>
 
 <body>
@@ -30,20 +22,19 @@
     {% block content %}
     <main>
         {% set content = get_section(path="_index.md") %}
+        {% set limit = 10 %}
+
         {% for section in content.subsections %}
 
         {% set section = get_section(path=section) %}
 
-        {% if section.title != "Articles" %}
-        {% if section.pages %}
+        {% if section.title != "Articles" and section.pages %}
         <h3>{{section.title}}</h2>
-            {% endif %}
-            {% endif %}
+        {% endif %}
 
             {% if section.pages %}
             <ul class="index">
-                {% for post in section.pages | slice(end=10) %}
-
+                {% for post in section.pages | slice(end=limit) %}
                 <li {% if post.extra.arabic %} dir="rtl" {% endif %}>
                     <a href="{{ post.permalink }}">{{ post.title }}</a>
                     <small class="secondary">
@@ -51,13 +42,12 @@
                         {% if post.description %}<br>{{ post.description }}{% endif %}
                     </small>
                 </li>
-
                 {% endfor %}
+                
+                {% if section.pages | length > limit %}
+                <li><small><a href="{{ section.permalink }}">More</a></small></li>
+                {% endif %}
             </ul>
-
-            {% if section.pages | length > 10 %}
-            <p><a href="{{ blog.permalink }}">More</a></p>
-            {% endif %}
 
             {% endif %}
             {% endfor %}
