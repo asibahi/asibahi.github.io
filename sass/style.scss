@@ -7,14 +7,14 @@ body {
 }
 
 body {
-    font-family: Arial, Helvetica, sans-serif;
-    font-size: 14pt;
+    font-family: sans-serif;
+    font-size: 1rem;
 
     text-align: justify;
 
     line-height: 1.3em;
 
-    width: 700px;
+    width: 600px;
     margin: 5em auto;
 }
 
@@ -58,14 +58,12 @@ code {
     font-size: 0.9em;
 }
 
-li {
-    margin-top: 1em;
-    line-height: 1.3;
-
-}
-
 ul.index {
     list-style-type: "";
+
+    li {
+        margin-top: 1em;
+    }
 
     li[dir="rtl"] {
         padding-inline-start: 40px;
@@ -76,12 +74,12 @@ ul.index {
 details.secondary li {
     line-height: 1.1;
     margin-top: 0.2em;
-    font-size: 10pt;
+    font-size: 0.8rem;
 }
 
 nav {
     .secondary {
-        font-size: 12pt;
+        font-size: 1rem;
         margin: 0;
     }
 
@@ -92,7 +90,6 @@ nav {
 
 pre {
     overflow: auto;
-    padding: 0.3em;
     font-size: 0.9em;
 
     code {
@@ -100,19 +97,13 @@ pre {
     }
 }
 
-.footnote-definition {
-    margin-top: 1em;
+.footnotes-list {
+    li {
+        margin-top: 2em;
+    }
 
     font-size: 0.8em;
     line-height: 1.2em;
-
-    &:first-of-type {
-        margin-top: 3em;
-    }
-
-    p {
-        display: inline;
-    }
 }
 
 table {
@@ -144,6 +135,16 @@ footer {
 
 .mylink {
     padding-right: 1em;
+}
+
+hr {
+    border: none;
+    padding: 1rem;
+    text-align: center;
+}
+
+hr::after {
+    content: '-';
 }
 
 h1,

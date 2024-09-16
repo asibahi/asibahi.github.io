@@ -12,6 +12,8 @@ highlight_theme = "inspired-github"
 
 extra_syntaxes_and_themes = ["syntax"]
 
+bottom_footnotes = true
+
 [extra]
 
 links = [

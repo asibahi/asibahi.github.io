@@ -83,6 +83,8 @@ The board of Dominions is a 9-sided hexagon. 217 cells. Ignoring tile placement 
 
 I oscillated (heh) between a few ideas, but eventually settled on a giant big array of `[217]Tile`, where an empty cell has the value `0`[^1]. To calculate offsets, I adapted the functions declared in the Red Blob article, and started with this neat loop (`N`, `CENTER`, and `CELL_COUNT` are compile-time constants based on the board's size):
 
+[^1]: As mentioned earlier, the Blank tile is not used in the game. This permits using a sentinel value of `0` (or really any value with the smallest six bits set to `0`) to mark an empty cell. Since Tiles are a `u8` bitset anyway, why waste memory on pointers (which are wider), or `Maybe`, which is at least an extra byte in size? I am not thinking *too* hard about performance (I know nobody will use this), but it is an interesting constraint to keep in mind.
+
 ```odin
 Board :: [CELL_COUNT]Tile
 
@@ -144,6 +146,8 @@ board_get_tile :: proc(back: ^[CELL_COUNT]Tile, hex: Hex) -> (^Tile, bool) {
 ```
 
 This has the advantage of being "clean", with no wasted place in the array for unused coordinates.[^2] Cell lookup is O(1): when checking a cell, it is imperative to check its neighbors quickly to verify legal moves.
+
+[^2]: I should be careful not to index into `Board` directly, however.
 
 A separate data structure would be needed to track the tiles in player's hands (not in play yet).
 
@@ -248,6 +252,8 @@ Game :: struct {
 
 To inquire about moves, a `Move` struct is needed[^3]. A move is simply a placement of a `Tile` on `Hex`. Whose tile and whose turn are ideally tracked and verified by the Game object.
 
+[^3]: I love that `move` is not a keyword here, which is really annoying in Rust.
+
 ```odin
 Move :: struct {
     hex:  Hex,
@@ -347,6 +353,8 @@ Which would bring the topic back to Groups, but there is another detour.
 ## Slotmaps
 
 In my implementation of Havannah (linked earlier), I used the `slotmap` Rust crate to track groups. Odin does not have a slotmap[^4] in its core library. There is [a sample showcase implementation by Ginger Bill](https://gist.github.com/gingerBill/7282ff54744838c52cc80c559f697051), but I wanted to try my hand at this FFI thing. With help from the Rust and Odin discords to navigate the FFI of both languages, I did the following, and it works! Almost statically typechecked from both sides, too.
+
+[^4]: Generational arena, generational handles, handle-based map, a rose by any other name.
 
 ```rust
 use slotmap::{DefaultKey, Key, KeyData, SlotMap};
@@ -540,6 +548,8 @@ So far, I made no mention of the game's rules, only talking about its physical p
 - Lastly, it is illegal to cause **Oscillation**: a Section which has no Liberties. [^5]
 - A Player may, instead of placing a Tile, pass the turn instead. Or if they have no legal moves, they *must*.
 
+[^5]: It is *Oscillation* because the resulting Group has no Liberties, and therefore has no clear Controller, so it *oscillates* between both colors. This is way the Blank tile has no role in the game: it automatically oscillates. 
+
 ### Scoring
 
 - The Game ends when both players pass consecutively.
@@ -560,6 +570,8 @@ Move :: struct {
 That is all a `Move` is: the player whose turn it is (as tracked by `Game`) places a `Tile` from their hand into a `Hex`, and from there follows that groups get updated and tiles get flipped and game progresses.
 
 But as a player may (or may have to) pass the turn, and as the game ends with two successive passes, `last_move` is registered in `Game` to track whether the game is about to end.[^6]
+
+[^6]: Technically, only a record of whether the last move *was* a pass is needed, but `last_move` is semantically clearer than a `last_move_was_a_pass` (or `pass_ends_the_game` or `the_end_is_nigh`) boolean or a `player_who_last_made_a_move` enum field. It may also be useful to highlight the last move in a GUI.
 
 To play the game, `Game` needs to have the following:
 
@@ -829,6 +841,8 @@ Rethought_Group :: struct {
 
 Much cleaner! Surprisingly, Odin allows bitwise OR over enumerations.[^7] If the resulting value has no tag assigned, it becomes a `BAD_ENUM_VALUE` and may potentially wreck the program. But if the numbers are assigned appropraitely, it can be made to always have a valid value.
 
+[^7]: Rust would *totally* yell at me. Then tell me to implement the trait to define the behavior myself.
+
 Thinking through this, it is clear that `.Empty` with any other tag should be, well, that other tag. `.Liberty`, being essentially an empty cell as well, with any of the other two tags should produce the other tag. `.Member_Tile` and `.Enemy_Connection` overlap when capturing groups, so Enemies should be converted to Members. Here is the printed `OR` table:
 
 ```
@@ -973,6 +987,8 @@ So why separate it at all? The idea was it would simplify handling, but it does 
     3. Move is over. (This is because legal moves are already screened, or a check for Oscillation would be needed.)
 5. The Blessed Group is checked for Liberty count. If it is 0, it is captured (flipped) and merged with its surrounding Enemy Groups.
 6. Done
+
+[^8]: Freeling does not specify in which order captures are processed. I am assuming here the order is the same as Go. Anyway, all this needs to be verified later once (if?) the engine is implemented.
 
 Note that I am assuming here that this is not a recursive operation. Here is the assumption: A new Tile placement that has no liberties *but* takes away the last liberty of an enemy Group captures it. There is no need to check if the surrounding friendly Groups (that surrounded the surrounding Enemy Groups) would also have no Liberties, because if they had no Liberties they would not exist! A lot of weight is placed right now on the correctness of `game_regen_legal_moves`, which is still delayed for later.
 
@@ -1472,6 +1488,8 @@ Group_Handle :: bit_field u8 {
 
 The `idx` here cannot, ever, be more than 63, which is all the address space needed for the worst case scenario, and a little bit more. The `owner` field is one bit, either this player or that player. The last bit is a funny one: it is just to allow using the zero value of the key (where `valid` is false), as a sentinel value for an empty slot. At first, I considered having the `extendable` boolean I have had in `Group`, but that just makes bookkeeping and updating `Group` status that much harder. [^9] So now how about this?
 
+[^9]: I have been thinking of why Groups need to own their own data anyway? Group membership is clearly delineated in `Game.group_map` as it currently is (which would become `[CELL_COUNT]Group_Handle` under the new regime.) Liberties and Enemy Connections can be calculated and collected with a combination of `game.groups_map` and, well, `game.board`. But that's another day's battle.
+
 ```odin
 Rethought_Group :: struct {
     state:        [CELL_COUNT]Hex_State,
@@ -1647,6 +1665,9 @@ For [my implementation of Havannah](https://github.com/asibahi/w9l), I went with
 Rendering the board is the easy part. But pieces in Dominions are distinct from each other, and it is not feasible to just *draw* the Tile's shape in the terminal. Firstly, that would be a very complex endeavour, and secondly it would balloon the drawing's size. But each tile can be represented, *is* represented, by a unique number from 1 to 63, plus a flag for the Owner. Using octal numbers, this can be made much nicer.
 
 Octal numbers today are mostly useless. Every language supports them because, well, they cost nothing to add, and they have one niche use in Unix file permissions. The *reason* they are useful for Unix file permissions is that these come in sets of three flags. So each set can be represented neatly by one octal digit (which stands for three bits).[^10]
+
+[^10]: A fuller explanation of file permissions, as irrelevant as they are to this article, [can be found here](https://docs.nersc.gov/filesystems/unix-file-permissions/).
+
 
 It just so happens that the Tiles in this game are also divided in two sets of three bits: three bits for the Right-side connections, and three to the Left-side connections, and two bits for Owner and Controller, [detailed earlier](#tiles). This makes it so the *right* digit represents the *right-side* connections, and the middle digit, to the *left* represents the *left* side connections. The rightmost digit is either `0` or `1` donating the Owner, and using ANSI magic, the tile is colored by the Controller's color. Neat, hah?
 
@@ -2063,7 +2084,7 @@ So throughout working on this article (for almost a whole month) I advanced my k
 
 So,  this was a fun ride. But it is time to move on to something else. 
 
-The code here is in the [bustan repositry](https://github.com/asibahi/bustan). You can see the evolution of the code, and much of what is in this article, through the git history.
+The code here is in the [`bustan` repositry](https://github.com/asibahi/bustan). You can see the evolution of the code, and much of what is in this article, through the git history.
 
 Until later.
 
@@ -2090,24 +2111,13 @@ Until later.
 
 
 
----
 
-[^1]: As mentioned earlier, the Blank tile is not used in the game. This permits using a sentinel value of `0` (or really any value with the smallest six bits set to `0`) to mark an empty cell. Since Tiles are a `u8` bitset anyway, why waste memory on pointers (which are wider), or `Maybe`, which is at least an extra byte in size? I am not thinking *too* hard about performance (I know nobody will use this), but it is an interesting constraint to keep in mind.
 
-[^2]: I should be careful not to index into `Board` directly, however.
 
-[^3]: I love that `move` is not a keyword here, which is really annoying in Rust.
 
-[^4]: Generatinal arena, generational handles, handle-based map, a rose by any other name.
 
-[^5]: It is Oscillation because the resulting Group has no Liberties, and therefore has no clear Controller, so it *oscillates* between both colors. This is way the Blank tile has no role in the game: it automatically oscillates. 
 
-[^6]: Technically, only a record of whether the last move *was* a pass is needed, but `last_move` is semantically clearer than a `last_move_was_a_pass` (or `pass_ends_the_game` or `the_end_is_nigh`) boolean or a `player_who_last_made_a_move` enum field. It may also be useful to highlight the last move in a GUI.
 
-[^7]: Rust would *totally* yell at me. Then tell me to implement the trait to define the behavior myself.
 
-[^8]: Freeling does not specify in which order captures are processed. I am assuming here the order is the same as Go. Anyway, all this needs to be verified later once (if?) the engine is implemented.
 
-[^9]: I have been thinking of why Groups need to own their own data anyway? Group membership is clearly delineated in `Game.group_map` as it currently is (which would become `[CELL_COUNT]Group_Handle` under the new regime.) Liberties and Enemy Connections can be calculated and collected with a combination of `game.groups_map` and, well, `game.board`. But that's another day's battle.
 
-[^10]: A fuller explanation of file permissions, as irrelevant as they are to this article, [can be found here](https://docs.nersc.gov/filesystems/unix-file-permissions/).
