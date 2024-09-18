@@ -7,7 +7,7 @@ body {
 }
 
 body {
-    font-family: sans-serif;
+    font-family: sans-serif, "Noto Emoji" ;
     font-size: 1rem;
 
     text-align: justify;
@@ -98,6 +98,7 @@ pre {
 }
 
 .footnotes-list {
+    font-family: sans-serif;
     li {
         margin-top: 2em;
     }
@@ -142,9 +143,16 @@ hr {
     padding: 1rem;
     text-align: center;
 }
-
-hr::after {
-    content: '-';
+hr::after{
+    font-family: "Noto Emoji";
+    font-size: x-large;
+    content: '\1fadf'; // splatter
+}
+hr:nth-of-type(3n)::after {
+    content: '\1faab'; // low battery
+}
+hr:nth-of-type(3n + 2)::after {
+    content: '\1fabe'; // leafless tree
 }
 
 h1,

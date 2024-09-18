@@ -2087,37 +2087,3 @@ So,  this was a fun ride. But it is time to move on to something else.
 The code here is in the [`bustan` repositry](https://github.com/asibahi/bustan). You can see the evolution of the code, and much of what is in this article, through the git history.
 
 Until later.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
