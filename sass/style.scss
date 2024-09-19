@@ -98,13 +98,16 @@ pre {
 }
 
 .footnotes-list {
-    font-family: sans-serif;
     li {
-        margin-top: 2em;
+        margin-top: 1em;
     }
 
     font-size: 0.8em;
     line-height: 1.2em;
+
+    [href^='#fr'] { 
+        font-family: sans-serif, system-ui;
+    }
 }
 
 table {
@@ -144,7 +147,6 @@ hr {
     text-align: center;
 }
 hr::after{
-    font-family: "Noto Emoji";
     font-size: x-large;
     content: '\1fadf'; // splatter
 }
