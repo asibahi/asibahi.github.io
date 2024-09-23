@@ -264,9 +264,323 @@ grid_init :: proc () -> (ret: Grid) {
 
 And it works, nicely! Place any of the Squares instead of `~Tile{}`, and it works correctly. Even propagates `Air` cells and their neighbors!!
 
-### Collapse
+### Controlled Demolition
 
-The `grid_propagate` procedure takes of care of collapsing cells with one candidate left.
+The `grid_propagate` procedure takes of care of collapsing cells with one candidate left. But as soon as right after the initial position, there are still many cells with unresolved state. That's why Contollled Demolition is needed, to *force* things to collapse, randomly.[^metaphor]
 
+[^metaphor]: Yes I am totally mixing metaphors right now. Way beyond Quantum Mechanics and well into AEC. Roll with it.
 
+The best candidates for Controlled Demolition are the cells with the least amount of candidates that are not already collapsed. That's to say, the least amount of candidates more than 1. Recording these is probably easy. Choosing one randomly, with even chances all over, is, at first impression, not. It is easy to choose *arbitrarily*, but not necessarily randomly. If a robust backtracking algorithm exists, then arbitrary is probably better than random. But I do not currently plan to backtrack, but instead simply start over whenever an illegal position is encounterd.
 
+How should one go about this? With so much randomness, the probably most straightforward course of action is to randomize the indices 0-14 three times. The first two randomized arrays are to loop over `candidates` in a somewhat random order. The third one is to loop over the candidates in the final found cell, and collapse to the first one it matches over.
+
+Sounds absolutely *boneheaded*, but it should work just fine.
+
+```odin
+grid_controlled_demolition :: proc (grid: ^Grid) -> bool {
+    // all the shuffling 
+    rows := []int{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 }
+    rand.shuffle(rows)
+    
+    cols := []int{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 }
+    rand.shuffle(cols)
+    
+    ids  := []int{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 }
+    rand.shuffle(ids)
+
+    // target collapse stored here
+    t_x : int 
+    t_y : int 
+
+    // tracking the minimum
+    min_card := 15
+
+    // loop over the grid "randomly"
+    for y in cols do for x in rows {
+        c := card(grid.candidates[x][y])
+        (c > 1) or_continue // already collapsed
+
+        if c < min_card {
+            t_x = x
+            t_y = y
+            min_card = c
+        }
+
+        if min_card == 2 do break // no point in looking further in this case.
+    }
+
+    // loop over the set flags randomly and collapse to the first match.
+    for id in ids do if id in grid.candidates[t_x][t_y] {
+        // COLLAPSE
+        if id == 0 {
+            grid.cells[t_x][t_y] = Air{}
+            grid.candidates[t_x][t_y] = {0}
+        } else {
+            tile := transmute(Tile)i8(id)
+            cand := tile_to_candidates(tile) // seriously don't ask
+
+            grid.cells[t_x][t_y] = tile
+            grid.candidates -= cand
+            grid.candidates[t_x][t_y] = cand
+        } 
+
+        break
+    }
+
+    // then propagate the new changes, returning the legality result
+    return grid_propagate(grid)
+}
+```
+
+This should be enough? Calling `grid_controlled_demolition` a couple of times seems to produce the expected result.
+
+```odin
+main :: proc () {
+    grid := grid_init()
+    
+    // crude 
+    grid_controlled_demolition(&grid)
+    grid_controlled_demolition(&grid)
+    grid_controlled_demolition(&grid)
+    grid_controlled_demolition(&grid)
+    grid_controlled_demolition(&grid)
+
+    for row, ri in grid.candidates do for c, ci in row {
+        fmt.println(ri, ci, c)
+    }
+}
+```
+<details> <summary>Sample output.</summary>
+
+```
+0 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 7 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 8 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 9 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 10 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 11 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+0 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 7 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 8 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 9 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 10 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 11 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+1 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 7 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 8 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 9 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 10 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 11 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+2 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 7 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 8 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 9 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 10 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 11 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+3 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 7 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 8 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 9 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 10 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 11 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+4 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+5 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+5 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+5 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+5 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+5 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+5 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+5 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+5 7 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+5 8 Candidates{0, 1, 4, 8, 12}
+5 9 Candidates{2, 3, 7, 10, 11}
+5 10 Candidates{2, 3, 7, 10, 11}
+5 11 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+5 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+5 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+5 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+6 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+6 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+6 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+6 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+6 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+6 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+6 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+6 7 Candidates{0, 2, 4, 8, 10, 12}
+6 8 Candidates{0}
+6 9 Candidates{9}
+6 10 Candidates{13}
+6 11 Candidates{4, 7, 12}
+6 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+6 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+6 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+7 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+7 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+7 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+7 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+7 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+7 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+7 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+7 7 Candidates{1, 3, 7, 11}
+7 8 Candidates{6}
+7 9 Candidates{0}
+7 10 Candidates{0}
+7 11 Candidates{0, 1, 2, 3, 8, 10, 11}
+7 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+7 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+7 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+8 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+8 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+8 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+8 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+8 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+8 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+8 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+8 7 Candidates{1, 3, 7, 11}
+8 8 Candidates{15}
+8 9 Candidates{5}
+8 10 Candidates{4, 7}
+8 11 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+8 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+8 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+8 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+9 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+9 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+9 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+9 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+9 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+9 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+9 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+9 7 Candidates{1, 3, 7, 11}
+9 8 Candidates{14}
+9 9 Candidates{0}
+9 10 Candidates{0, 1, 2, 3, 8, 10, 11}
+9 11 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+9 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+9 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+9 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+10 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+10 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+10 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+10 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+10 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+10 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+10 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+10 7 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+10 8 Candidates{8, 10, 11, 12}
+10 9 Candidates{0, 1, 2, 3, 4, 7}
+10 10 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+10 11 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+10 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+10 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+10 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 7 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 8 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 9 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 10 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 11 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+11 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 7 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 8 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 9 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 10 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 11 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+12 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 7 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 8 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 9 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 10 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 11 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+13 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 0 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 1 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 2 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 3 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 4 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 5 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 6 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 7 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 8 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 9 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 10 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 11 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 12 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 13 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+14 14 Candidates{0, 1, 2, 3, 4, 7, 8, 10, 11, 12}
+```
+</details>
+
+### Success and Failure
+
+This seems to work fine. But it is still missing ine: it needs to know when to stop. If it is a successful solution, (where every cell has exactly one candidate), then stop and print it out. If it is a failed solution, try again.
