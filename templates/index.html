@@ -53,7 +53,7 @@
             {% endfor %}
     </main>
 
-    {% set linked_pages = content.pages | filter(attribute="extra.in_header") %}
+    {% set linked_pages = content.pages | filter(attribute="extra.in_footer") %}
     {% if config.extra.links or linked_pages %}
     <footer> <small>
             {% for link in config.extra.links %}

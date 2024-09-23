@@ -1,8 +1,8 @@
 +++
 
-title = "About"
-# extra.in_header = true
+title = "Cat"
+extra.in_footer = true
 
 +++
 
-Lorem ipsum
+![](/dorgham.jpg)
