@@ -8,7 +8,7 @@ Here is the [main workspace repo](https://github.com/asibahi/mimiron), and the C
 
 Here is the [Discord Bot repo](https://github.com/asibahi/mimiron/tree/master/mimiron_bot), where info about using the bot can be found.
 
-![](https://github.com/asibahi/mimiron/blob/master/README/deckimagewide.png?raw=true)
+![Example Deck Image](../deckimagewide.png)
 
 I have been playing [Hearthstone](https://hearthstone.blizzard.com/en-us) almost every day for the better part of a decade, since the release of Journey of Un'Goro in 2017, and I have been participating in various communities for the game on Discord and Reddit. Almost all the tools in these communities that help players look up the cards are based on an unofficial third party API, even though Blizzard does have their own. So I always imagined that there should be one based on Blizzard's API.
 

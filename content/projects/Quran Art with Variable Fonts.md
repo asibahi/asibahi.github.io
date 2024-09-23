@@ -4,7 +4,7 @@ description = "Automatically justified Quran text using variable fonts."
 weight = 0
 +++
 
-![](https://github.com/asibahi/nun/blob/master/images/noor_50.png?raw=true)
+[![الله نور السموات](../noor_50-2.png)](https://github.com/asibahi/nun/blob/master/images/noor_50.png)
 
 This is two things:
 
