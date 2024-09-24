@@ -62,6 +62,8 @@ So, how does one solve a Sudoku?
 
 This approach can work just fine for the Hanging Gardens. The Tile set and the connection rules are clearly defined. It is only a matter of putting it into code and .. running it. The problem most apparent to me, however, is that the search space is potentially *huge*. So, I first need to try this approach with a smaller problem set.
 
+---
+
 ## Square Gardens
 
 ![Garden Squares](./transcendental1-3.gif)
@@ -83,7 +85,7 @@ Air  :: distinct struct {}
 Cell :: union { Air, Tile }
 ```
 
-I am not too happy about this because while the data can neatly fit into one byte, Odin puts this in two. This looks cleaner and easier to understand than weird hacks, so I will stick to it for the time being. Odin's `union` is nice here, semantically, as it actually has three states: `nil`, `Air` and `Tile`, exactly as much as we need.
+I am not too happy about this because while the data can neatly fit into one byte, Odin puts this in two. This looks cleaner and easier to understand than weird hacks, so I will stick to it for the time being. Odin's `union` is nice here, semantically, as it actually has three states: `nil`, `Air` and `Tile`, exactly as much as needed.
 
 The Squares are only 16 (count them in the image above). It is possible to safely ignore the Red (unconnected) Square, because it can simply be put anywhere in space and does not need to connect to anything. Generating a list of the Squares is as simple as counting to 15, or `0xF`. Running the below snippet to confirm:
 
@@ -133,7 +135,7 @@ To track the candidates in each cell, the simplest option, perhaps, is to create
 Candidates :: distinct bit_set[0..=15; u16]
 
 Grid :: struct {
-    cells:      [15][15]Cell, // central cell is [8][8]
+    cells:      [15][15]Cell, // central cell is [7][7]
     candidates: [15][15]Candidates
 }
 ```
@@ -145,11 +147,11 @@ This is the first draft of how to initialize the grid. Note that in Odin `~` is 
 ```odin
 grid_init :: proc() -> (ret: Grid) {
     // Blue Square
-    ret.cells[8][8] = ~Tile{}
+    ret.cells[7][7] = ~Tile{}
 
     // Fill the Candidates Grid 
     ret.candidates = ~Candidates{15} // broadcast magic
-    ret.candidates[8][8] = {15}
+    ret.candidates[7][7] = {15}
 
     return ret
 }
@@ -254,7 +256,7 @@ grid_init :: proc () -> (ret: Grid) {
     ret.candidates = ~Candidates{}
 
     // Place Blue square
-    ret.cells[8][8] = ~Tile{}
+    ret.cells[7][7] = ~Tile{}
 
     grid_propagate(&ret)
 
@@ -306,7 +308,7 @@ grid_controlled_demolition :: proc (grid: ^Grid) -> bool {
             min_card = c
         }
 
-        if min_card == 2 do break // no point in looking further in this case.
+        if min_card == 2 do break // no point in looking further
     }
 
     // loop over the set flags randomly and collapse to the first match.
@@ -583,4 +585,67 @@ main :: proc () {
 
 ### Success and Failure
 
-This seems to work fine. But it is still missing ine: it needs to know when to stop. If it is a successful solution, (where every cell has exactly one candidate), then stop and print it out. If it is a failed solution, try again.
+This seems to work fine. But it is still missing ine: it needs to know when to stop. If it is a successful solution, (where every cell has exactly one candidate), then stop and print it out. If it is a failed solution, try again. Thankfully, this could be expressed in a couple of lines, with the assumption that the grid has collapsed completely if the first element in the grid, as unlikely as it is to be reached, equals `{0}`, an `Air` cell.:
+
+```odin
+main :: proc () {
+    grid := grid_init()
+
+    outer: for {
+        for grid_controlled_demolition(&grid) {
+            if grid.candidates[0][0] == {0} do break outer
+        }
+
+        grid = grid_init()
+    }
+
+    grid_print(&grid) // uninteresting code. it is a grid.
+}
+```
+
+Here are two sample results, which appear to be correct. The second result is interesting as it has a floating element. Obviously the code is undeterministic: each time it runs it gives a different result.[^symmetric]
+
+[^symmetric]: More interesting variations can include a search for only symmetrical solutions. This would require additional, more complex constraints in candidate placements. Nothing that cannot be dome but a whole lot more code.
+
+```
+// try 1
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |02|  |  |  |  |  |  |
+|  |  |  |  |  |  |03|07|12|  |  |  |  |  |  |
+|  |  |  |  |  |  |11|14|  |  |  |  |  |  |  |
+|  |  |  |  |  |  |09|15|04|  |  |  |  |  |  |
+|  |  |  |  |  |  |  |10|  |  |  |  |  |  |  |
+|  |  |  |  |  |01|05|13|06|  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |08|  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+
+// try 2
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |01|06|  |02|  |  |  |  |  |
+|  |  |  |  |  |  |  |10|  |08|  |  |  |  |  |
+|  |  |  |  |  |  |03|14|  |  |  |  |  |  |  |
+|  |  |  |  |  |  |11|15|07|05|04|  |  |  |  |
+|  |  |  |  |  |  |09|13|12|  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+|  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
+```
+
+3D Cubes here I come!!
+
+---
+
+## Packed Solution
+
