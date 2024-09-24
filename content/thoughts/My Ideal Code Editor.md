@@ -3,7 +3,7 @@ title = "My Ideal Code Editor"
 date = 2024-09-24
 +++
 
-I have been doing some thinking about what my ideal text editor should be. I currently use VSCode, both to edit this site and to play around with various projects. However, VSCode is actually too powerful for my needs. And it lacks one crucial feature (that's pretty much lacking from almost every text/code editor outside of TextEdit): proper Arabic language and Right-to-Left (RTL) support.[^rtl]
+I have been doing some thinking about what my ideal code editor should be. I currently use VSCode, both to edit this site and to play around with code. However, VSCode is actually too powerful for my needs. And it lacks one crucial feature (that's pretty much lacking from almost every text/code editor outside of TextEdit and Notepad): proper Arabic language and Right-to-Left (RTL) support.[^rtl]
 
 [^rtl]: There are *Markdown* editors that support Arabic decently enough, such as [Bear](https://bear.app) and Obsidian. But those do not handle HTML and Sass and what goes into editing a website, even ones as simple as this.
 
