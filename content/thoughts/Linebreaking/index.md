@@ -19,16 +19,16 @@ The most important input is the text. However, the algorithm does not deal with 
 
 The first process is called "Shaping". The shaper (the most famous of which is HarfBuzz), takes the input text and the font you want to use and gives you three things: what glyphs (from the font) to use, their order, and their positioning (think kerning). In other words, it gives you a series of **boxes**. The linebreaking algorithm does not care what is *inside* the box. It only cares about the box's "width", or the horizontal advance.
 
-The shaper also tells you that which characters from your text are whitespace, and be stretched and squashed as needed. TXe space is the most famous of those, but there are others. These are called **glue**. Each glue character has a default width, a minimum width, and a maximum width. (The paper expresses the minimum and maximum as ratios, and I do not quite understand that specific part to be honest as it is mathier than what I know.) In practical terms, this says that the space can't be so small that words are glued together, and it can't be so large that most of the line becomes whitespace. These values can be based on the font or the script or the designer or whoever. The minimum could even be zero should the designer wishes.
+The shaper also tells you that which characters from your text are whitespace, and be stretched and squashed as needed. The space is the most famous of those, but there are others. These are called **glue**. Each glue character has a default width, a minimum width, and a maximum width. (The paper expresses the minimum and maximum as ratios, and I do not quite understand that specific part to be honest as it is mathier than what I know.) In practical terms, this says that the space can't be so small that words are glued together, and it can't be so large that most of the line becomes whitespace. These values can be based on the font or the script or the designer or whoever. The minimum could even be zero should the designer wishes.
 
 Also, you need to run your input text through a **breakpoint**-finding algorithm. This is to say, you need to know *where* you can break your text into lines. You can't just break the line arbitrarily anywhere, or only at glue (think hyphenation). The Unicode ICU library has the tools for that.
 
 Knuth's name for breakpoints is **penalties**, and that includes mandatory breakpoints, such as the end of paragraphs, and undesirable breakpoints, such as hyphenated words. In Knuth's implementation, penalties have a width. Usually it is zero, but when you break at a hyphen, you need to add the hyphen's width. If you want to implement trailing punctuation (a rather nifty typographic trick), you give the penalty *after* the punctuation a *negative* width. Look at the paper for more detail.
 
-Note that boxes having a fixed width is a rather hefty assumption. It only works for Latin typeseeting, and only works for fixed fonts. In other scripts, characters may have alternate shapes that may be wider or narrower. There is even an OpenType feature for that, called Justification Alternates. Many variable fonts have axis that only control specific letters. See an [Arabic and Latin example](https://www.29lt.com/product/29lt-okaso/) and an [Armenian one](https://simoncozens.github.io/more-on-newbreak/). The Knuth-Plass algorithm as usually implemented does not know how to deal with either of these features, and because Latin-centric software designers, we Arabic speakers are stuck with ugly justified text. But I am coming to that later.
+Note that boxes having a fixed width is a rather hefty assumption. It only works for Latin typesetting, and only works for fixed fonts. In other scripts, characters may have alternate shapes that may be wider or narrower. There is even an OpenType feature for that, called Justification Alternates. Many variable fonts have axis that only control specific letters. See an [Arabic and Latin example](https://www.29lt.com/product/29lt-okaso/) and an [Armenian one](https://simoncozens.github.io/more-on-newbreak/). The Knuth-Plass algorithm as usually implemented does not know how to deal with either of these features, and because Latin-centric software designers, we Arabic speakers are stuck with ugly justified text. But I am coming to that later.
 
 Back on track: you get your text. You run through the shaper, and the Unicode ICU library, and you get two lists.
-- A list of glyphs, expressed as fixed width **boxes** (letters), and stretchable squashable **glue** (white space).
+- A list of glyphs, expressed as fixed width **boxes** (letters), and stretchable, squashable **glue** (white space).
 - A list of **breakpoints**, places you can break the line. They have an associated value called **penalties** which ranges from -100,000 (never break here) to +100,000 (must break).
 
 ### The Line Width
@@ -56,7 +56,7 @@ Here are the rough outline of how to build the graph:
 
 Often, the last line, or edge, of the directed graph always has a cost of 0. In physical terms, the last line of the paragraph is not usually justified, so wherever the last word falls is fine and the spaces will be added evenly.
 
-The penalties attached to breakpoints can change the evaluation of each line's cost. The simplest example is hyphenation. A breakpoint at a hyphen, having a penalty of -50 (or w/e), adds 50 points to the cost. Two hyphens in a row adds, say, 100 to the cost of both hyphens (so it is especially discouraged.) To avoid typographic orphans, the second to last and third to last breakpoints can be assigned arbitrary large penalties. Another idea suggested in the paper is to give a penalty to lines with wildy different densities (so a tight line followed by a loose line). The penalties attached to breakpoints give you a flexible toolbox to decide which typographic "behaviour" to encourage or discourage.
+The penalties attached to breakpoints can change the evaluation of each line's cost. The simplest example is hyphenation. A breakpoint at a hyphen, having a penalty of -50 (or w/e), adds 50 points to the cost. Two hyphens in a row adds, say, 100 to the cost of both hyphens (so it is especially discouraged.) To avoid typographic orphans, the second to last and third to last breakpoints can be assigned arbitrary large penalties. Another idea suggested in the paper is to give a penalty to lines with wildly different densities (so a tight line followed by a loose line). The penalties attached to breakpoints give you a flexible toolbox to decide which typographic "behaviour" to encourage or discourage.
 
 Note that these numbers for penalties are essentially arbitrary and you should try different values for different things. You can even have the user set them!
 
@@ -136,25 +136,25 @@ That's it. This is the Knuth-Plass linebreaking algorithm, more or less.
 
 ### Adjustments
 
-Note that now there is no logic to punish two consecutive hyphenations and paragraph lengths and other cost adjustments related to the paragraph as a whole. One could add these adjustments after creating the graph, by traversing the graph and adjusting the cost of any edge between two hyphens, or any sequence of edges with disaparate density, and what have you. The sky is the limit.
+Note that now there is no logic to punish two consecutive hyphenations and paragraph lengths and other cost adjustments related to the paragraph as a whole. One could add these adjustments after creating the graph, by traversing the graph and adjusting the cost of any edge between two hyphens, or any sequence of edges with disparate density, and what have you. The sky is the limit.
 
 ### Real world example: Typst
 
 From the little code examples I have seen, the algorithm is implemented slightly differently. Here is a real world example:
 
-I have been looking a the line breaking algorithm implemented in Typst. It follows the same basic algorithm we are talking about, but builds the underlying graph differently, but calls it a table rather than a graph, just to confuse non-CS folks. [You can find the description and the code here](https://github.com/typst/typst/blob/cc67e5309994eefd1bd1c892f040ec7912052a4b/library/src/layout/par.rs#L819). From what I understand, it assigns each breakpoint, starting from the first, the cost of setting the paragraph up to itself, but that calulcation takes into account the previous breakpoints' recorded score. If you will allow me to refer again to the beautiful graph above, look at the breakpoint "so" in the third line, and what is above it. To simplify the reasoning a bit, let's assume only the breakpoints in the graph are valid, even tho the logic would be the same when you go over every breakpoint.
+I have been looking a the line breaking algorithm implemented in Typst. It follows the same basic algorithm we are talking about, but builds the underlying graph differently, but calls it a table rather than a graph, just to confuse non-CS folks. [You can find the description and the code here](https://github.com/typst/typst/blob/cc67e5309994eefd1bd1c892f040ec7912052a4b/library/src/layout/par.rs#L819). From what I understand, it assigns each breakpoint, starting from the first, the cost of setting the paragraph up to itself, but that calculation takes into account the previous breakpoints' recorded score. If you will allow me to refer again to the beautiful graph above, look at the breakpoint "so" in the third line, and what is above it. To simplify the reasoning a bit, let's assume only the breakpoints in the graph are valid, even tho the logic would be the same when you go over every breakpoint.
 
 1. Beginning to the first bp "a" has a cost of 2357.
 2. First bp "a" to second bp "king" has a cost of 2357 (cost of "a") plus whatever the cost of "a" to "king" is. We find that Beginning to second bp "king" has a cost of 1734, which is less than 2357 + x, so we record that "king" has a cost of 1734.
 3. Third bp "was" goes through the same logic with every previous breakpoint, and the graph artist already found out the lowest cost "was" can have is 2363 (2357 + 6), we record that for "was" noting that we are basing this off of "a".
-4. Fourth bp "so" , when connecting with "a" has a cost of 4633 (2276 + 2357). When connecting with "king" it is 6426 (4692 + 1734). So we record that for "so" the least value we doung was 4633 while connecting through "a".
+4. Fourth bp "so" , when connecting with "a" has a cost of 4633 (2276 + 2357). When connecting with "king" it is 6426 (4692 + 1734). So we record that for "so" the least value we found was 4633 while connecting through "a".
 5. etc for each following one.
 
 By recording the least value each breakpoint has, by the time you reach the last breakpoint, you already have the lowest cost path calculated for you with the lists of breakpoints you should, well, break at. I annotated this logic on the graph above, showing the cost of each breakpoint and highlighting the parent relationship that gave me the lowest cost (when there are multiple parents).. The path from the last breakpoint (at "thing") that gives "thing" the lowest cost is left as an exercise to the reader. To know the cost of each path, add the path's cost to the parent node's cost, and pick the path that gives you the least cost.
 
 ![Annotated Graph](Paragraph%20Graph%20annotated.png)
 
-I find my version above easier to grok, to be honest. Either way you organize the code, you are building a graph, and then you are traversing it to find the shortest path. The main difference is where the cost is encoded. In my version, the cost is encoded in the edges themselves, where each edge carries its cost. In the Typst version, the cost is encoded on each breakpoint, by finding the smallest cost among parent nodes and their encoming edges.
+I find my version above easier to grok, to be honest. Either way you organize the code, you are building a graph, and then you are traversing it to find the shortest path. The main difference is where the cost is encoded. In my version, the cost is encoded in the edges themselves, where each edge carries its cost. In the Typst version, the cost is encoded on each breakpoint, by finding the smallest cost among parent nodes and their incoming edges.
 
 ## What about `build_line()` ?
 
@@ -174,8 +174,8 @@ How this function should work can be summarised as:
 4. Find the sum of all the boxes' widths. And find the number of the glue characters.
 5. Calculate the sum of all boxes and glue widths, with the glue at the maximum width per space character. If it is *less* than the desired width return an `Error::LineTooLoose`.
 6. Repeat with the glue at the minimum width per space character. If it *more* than the desired width return an `Error::LineTooTight`.
-7. Now do it with the glue at the ideal (font given) width per space character. *This* width, and its difference from the given line width (in the function input) is what is used to caulcate the line's `cost`.
-8. Simple arithmatic should tell what the glue size for this line is.
+7. Now do it with the glue at the ideal (font given) width per space character. *This* width, and its difference from the given line width (in the function input) is what is used to calculate the line's `cost`.
+8. Simple arithmetic should tell what the glue size for this line is.
 
 ### Pseudocode
 

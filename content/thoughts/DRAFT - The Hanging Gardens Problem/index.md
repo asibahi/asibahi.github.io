@@ -72,7 +72,7 @@ Phrasing the problem in terms of Squares, and 2D connections, rather than Cubes,
 
 ### Tiles and Air
 
-First, I need to formulate the tiles. There are two kinds of Tiles. The first kind is the actualy Squares. This is a *finite* set. The second kind, is an "Air" tile. This empty tile is infinitely availeble, and is automatically placed at the Propagation phase connected to every Red face. A Red face *must* connect to an Air tile, and a Blue face can *never* connect to one. An Air tile can connect from any side to any Air tile with no restriction. 
+First, I need to formulate the tiles. There are two kinds of Tiles. The first kind is the actually Squares. This is a *finite* set. The second kind, is an "Air" tile. This empty tile is infinitely available, and is automatically placed at the Propagation phase connected to every Red face. A Red face *must* connect to an Air tile, and a Blue face can *never* connect to one. An Air tile can connect from any side to any Air tile with no restriction. 
 
 I am still having fun with [Odin](https://odin-lang.org), so I will try this solution in it first. Here are the starting types:
 
@@ -129,7 +129,7 @@ Which is exactly what is needed. Hooray!!
 
 An infinite grid is infeasible due to being in a finite universe and using computers with finite resources. So what is a good size for a finite grid? There are 16 Tiles, so a 16 by 16 grid is a clear upper bound, and clearly too big, due to the impossibility of all squares being in one line. I will go with a 15 by 15 grid, which is also safe as it is too big, but it gives me a nice center cell to fix the Blue square in, and branch everywhere from there.
 
-To track the candidates in each cell, the simplest option, perhaps, is to create a set of tiles. Since each tile corresponds neatly to a number (as per the `transmute` above,) simply tracking the mumbers should be enough. As mentioned also, the Red square can be placed anywhere in space, so it does not need to be tracked. Giving its number, 0, to track the Air Tile should be enough, as it can later replace almost any Air tile in the final grid.
+To track the candidates in each cell, the simplest option, perhaps, is to create a set of tiles. Since each tile corresponds neatly to a number (as per the `transmute` above,) simply tracking the numbers should be enough. As mentioned also, the Red square can be placed anywhere in space, so it does not need to be tracked. Giving its number, 0, to track the Air Tile should be enough, as it can later replace almost any Air tile in the final grid.
 
 ```odin
 Candidates :: distinct bit_set[0..=15; u16]
@@ -163,7 +163,7 @@ An astute Sudoku solver would quickly be able to see that this initial list of c
 
 [^edges]: Nor does it into account the edges of the Grid (where only Red faces may, well, face.) However, the edges of the Grid are unlikely to be reached, so I will ignore that for now.
 
-It follows that for each placed `Cell` in `cells`, it must update th surrounding candidates. So a function that gives out the candidates per face is needed. This can almost just be harcoded, since each number maps neatly to a specific square. It is possible to hard code it for each tile individually, but where is the fun in that.
+It follows that for each placed `Cell` in `cells`, it must update the surrounding candidates. So a function that gives out the candidates per face is needed. This can almost just be hardcoded, since each number maps neatly to a specific square. It is possible to hard code it for each tile individually, but where is the fun in that.
 
 ```odin
 Candidate_Set :: [Side]Candidates // Enumerated arrays, a nice Odin feature.
@@ -231,7 +231,7 @@ grid_propagate :: proc (grid: ^Grid) -> bool {
         if cand == {} do return false // illegal state reached
                 
         // COLLAPSE
-        // obviously only a new collapse if it isnt collapsed already
+        // obviously only a new collapse if it is not collapsed already
         if grid.cells[x][y] == nil && card(cand) == 1 do for id in cand {
             any_collpased = true
 
@@ -268,11 +268,11 @@ And it works, nicely! Place any of the Squares instead of `~Tile{}`, and it work
 
 ### Controlled Demolition
 
-The `grid_propagate` procedure takes of care of collapsing cells with one candidate left. But as soon as right after the initial position, there are still many cells with unresolved state. That's why Contollled Demolition is needed, to *force* things to collapse, randomly.[^metaphor]
+The `grid_propagate` procedure takes of care of collapsing cells with one candidate left. But as soon as right after the initial position, there are still many cells with unresolved state. That's why Controlled Demolition is needed, to *force* things to collapse, randomly.[^metaphor]
 
 [^metaphor]: Yes I am totally mixing metaphors right now. Way beyond Quantum Mechanics and well into AEC. Roll with it.
 
-The best candidates for Controlled Demolition are the cells with the least amount of candidates that are not already collapsed. That's to say, the least amount of candidates more than 1. Recording these is probably easy. Choosing one randomly, with even chances all over, is, at first impression, not. It is easy to choose *arbitrarily*, but not necessarily randomly. If a robust backtracking algorithm exists, then arbitrary is probably better than random. But I do not currently plan to backtrack, but instead simply start over whenever an illegal position is encounterd.
+The best candidates for Controlled Demolition are the cells with the least amount of candidates that are not already collapsed. That's to say, the least amount of candidates more than 1. Recording these is probably easy. Choosing one randomly, with even chances all over, is, at first impression, not. It is easy to choose *arbitrarily*, but not necessarily randomly. If a robust backtracking algorithm exists, then arbitrary is probably better than random. But I do not currently plan to backtrack, but instead simply start over whenever an illegal position is encountered.
 
 How should one go about this? With so much randomness, the probably most straightforward course of action is to randomize the indices 0-14 three times. The first two randomized arrays are to loop over `candidates` in a somewhat random order. The third one is to loop over the candidates in the final found cell, and collapse to the first one it matches over.
 
@@ -585,7 +585,7 @@ main :: proc () {
 
 ### Success and Failure
 
-This seems to work fine. But it is still missing ine: it needs to know when to stop. If it is a successful solution, (where every cell has exactly one candidate), then stop and print it out. If it is a failed solution, try again. Thankfully, this could be expressed in a couple of lines, with the assumption that the grid has collapsed completely if the first element in the grid, as unlikely as it is to be reached, equals `{0}`, an `Air` cell.:
+This seems to work fine. But it is still missing one thing: it needs to know when to stop. If it is a successful solution, (where every cell has exactly one candidate), then stop and print it out. If it is a failed solution, try again. Thankfully, this could be expressed in a couple of lines, with the assumption that the grid has collapsed completely if the first element in the grid, as unlikely as it is to be reached, equals `{0}`, an `Air` cell.:
 
 ```odin
 main :: proc () {

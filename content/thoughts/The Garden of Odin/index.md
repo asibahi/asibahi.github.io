@@ -6,17 +6,17 @@ date = "2024-09-01"
 
 In an escape from the worries of life, I have been reading recently into the [Odin programming language](https://odin-lang.org). I wanted to learn something that is closer to the metal than Rust, and Odin seems nice.
 
-For a project to do with the language, I figured I would build a library for the abstract board game [Domnions, by Christian Freeling](https://mindsports.nl/index.php/the-pit/526-dominions). ([Sensei's Library link](https://senseis.xmp.net/?Dominions)). The game can be described as a Go variant with distinct pieces, as opposed to Go itself where every "piece" is identical.
+For a project to do with the language, I figured I would build a library for the abstract board game [Dominions, by Christian Freeling](https://mindsports.nl/index.php/the-pit/526-dominions). ([Sensei's Library link](https://senseis.xmp.net/?Dominions)). The game can be described as a Go variant with distinct pieces, as opposed to Go itself where every "piece" is identical.
 
 The game is *weird*. It is much less known than Freeling's other games like Havannah (for which I wrote [an implementation for in Rust](https://github.com/asibahi/w9l)) and Grand Chess (which I designed and built a physical set for). Even Freeling himself does not put much stock into it, and is more interested in the tile set itself (which he calls [the China Labyrinth](https://mindsports.nl/index.php/puzzles/tilings/china-labyrinth/), even though they have nothing to do with China) than the game. He made other games with the tile set which you can find by browsing his site.
 
-In code and my handwirtten notes, I call the tile set **Bustan**: Arabic for Garden (hence the name of this article). Variety, branches, paths, and fences all make gardens seem like an appropriate metaphor for what is going on.
+In code and my handwritten notes, I call the tile set **Bustan**: Arabic for Garden (hence the name of this article). Variety, branches, paths, and fences all make gardens seem like an appropriate metaphor for what is going on.
 
 This is the sample game Freeling posted on his website:
 
 ![A game in progress of Dominions](dominions.png)
 
-I am writing this post as a way to organize my thoughts on how to represent the game in code. It is a semi organized, semi-chronologically-sorted brain dump: I am writing it as I iterate over the code. I will be talking mostly about how to represent the game in code form, leaving the rules for later. The end result can be found in the git history of the [`bustan` repositry](https://github.com/asibahi/bustan).
+I am writing this post as a way to organize my thoughts on how to represent the game in code. It is a semi organized, semi-chronologically-sorted brain dump: I am writing it as I iterate over the code. I will be talking mostly about how to represent the game in code form, leaving the rules for later. The end result can be found in the git history of the [`bustan` repository](https://github.com/asibahi/bustan).
 
 ## Tiles
 
@@ -36,7 +36,7 @@ Each player starts the game with the full set of tiles, minus the Blank, the Zer
 
 During the game, control of tiles can be flipped from the owner to the opponent. After all one wins the game by controlling more tiles.
 
-All this neatly fits into a `u8`! And Odin has bitsets native into the language. When I was asking questions in Odin's discord, Ginger Bill (BDFL of Odin) suggested this structure.
+All this neatly fits into a `u8`! And Odin has bit-sets native into the language. When I was asking questions in Odin's discord, Ginger Bill (BDFL of Odin) suggested this structure.
 
 ```odin
 // 0b 0 0 _ 0 0 0 _ 0 0 0
@@ -79,11 +79,11 @@ tile_flip:: proc(t: ^Tile) {
 
 Here is where I go back and forth into reading Red Blob Games's [excellent guide to Hexagonal boards](https://www.redblobgames.com/grids/hexagons/).
 
-The board of Dominions is a 9-sided hexagon. 217 cells. Ignoring tile placement restrictions for now, how to actially place tiles onto the board? 
+The board of Dominions is a 9-sided hexagon. 217 cells. Ignoring tile placement restrictions for now, how to actually place tiles onto the board? 
 
 I oscillated (heh) between a few ideas, but eventually settled on a giant big array of `[217]Tile`, where an empty cell has the value `0`[^1]. To calculate offsets, I adapted the functions declared in the Red Blob article, and started with this neat loop (`N`, `CENTER`, and `CELL_COUNT` are compile-time constants based on the board's size):
 
-[^1]: As mentioned earlier, the Blank tile is not used in the game. This permits using a sentinel value of `0` (or really any value with the smallest six bits set to `0`) to mark an empty cell. Since Tiles are a `u8` bitset anyway, why waste memory on pointers (which are wider), or `Maybe`, which is at least an extra byte in size? I am not thinking *too* hard about performance (I know nobody will use this), but it is an interesting constraint to keep in mind.
+[^1]: As mentioned earlier, the Blank tile is not used in the game. This permits using a sentinel value of `0` (or really any value with the smallest six bits set to `0`) to mark an empty cell. Since Tiles are a `u8` bit-set anyway, why waste memory on pointers (which are wider), or `Maybe`, which is at least an extra byte in size? I am not thinking *too* hard about performance (I know nobody will use this), but it is an interesting constraint to keep in mind.
 
 ```odin
 Board :: [CELL_COUNT]Tile
@@ -225,7 +225,7 @@ Looking at different game libraries, to see which API they provide and how they 
 
 Most of these structure their API around a specific object: the *Game* object, which is interacted with by querying legal moves, making moves, and, optionally, undoing moves. That's it. The Game object tracks the state of all elements in the game.
 
-The most straightforward way to do that is a struct. I do not really know if this is the "optimal" arrangment of fields, but I am doing what makes sense to me.
+The most straightforward way to do that is a struct. I do not really know if this is the "optimal" arrangement of fields, but I am doing what makes sense to me.
 
 ```odin
 Player :: enum u8 {
@@ -261,7 +261,7 @@ Move :: struct {
 }
 ```
 
-This misses one big thing: Groups. Dominions is a game of territory, based on Go. Tiles together make Groups. Groups have liberties, which they live and die of. Groups capture other Groups. The winner is the player with bigger Groups. Groups are importamt.
+This misses one big thing: Groups. Dominions is a game of territory, based on Go. Tiles together make Groups. Groups have liberties, which they live and die of. Groups capture other Groups. The winner is the player with bigger Groups. Groups are important.
 
 ## Bitboards
 
@@ -273,7 +273,7 @@ In chess implementations: There is a bitboard (read: a `u64`) to mark where all 
 
 The other advantage of bitboards is that, since they are just bits, they have bit operations. With a bitboard showing the white pieces are and a bitboard showing where black's pieces can move next turn: just `AND` them together and there is now a new bitboard of which pieces of white are under attack. They are small, simple integers, and operating on them is as easy as integers. 
 
-Unfortunately, however, the Dominions board is decidedly *not* 64 cells, or any such convenient number. It is 217 cells. It would be possible to represent the whole board with a 217bit integer, should it exist, but the largest bit set Odin provides is 128 bits. But have no fear! An array of 7 bit sets can solve the problem, as 7 `u32` integers can fit the needed 217 bits and more (namely 224 bits). This is as small as can be. Thanks to Odin's array programming (which is also taken advantage of for Hex math), using bitwise operations on these bitboards is as easy as they are on usual bitsets. The additional 7 bits can be used for metadata, as well.
+Unfortunately, however, the Dominions board is decidedly *not* 64 cells, or any such convenient number. It is 217 cells. It would be possible to represent the whole board with a 217bit integer, should it exist, but the largest bit set Odin provides is 128 bits. But have no fear! An array of 7 bit sets can solve the problem, as 7 `u32` integers can fit the needed 217 bits and more (namely 224 bits). This is as small as can be. Thanks to Odin's array programming (which is also taken advantage of for Hex math), using bitwise operations on these bitboards is as easy as they are on usual bit-sets. The additional 7 bits can be used for metadata, as well.
 
 ```odin
 Bitboard :: distinct [7]bit_set[0 ..< 32;u32] // 7 * 32 = 224
@@ -311,7 +311,7 @@ group_capture :: proc(blessed, cursed: ^Group) {
 }
 ```
 
-As an addition, I implemented an iterator over the set bits in `Bitboard`. Odin has nice syntax to iterate over the set flags in a bitset, but an array of bitsets presents a logistical challenge. I hacked at it for a couple of hours and came up with the following. Odin's implementation of iterators is, all considered, fairly easy.
+As an addition, I implemented an iterator over the set bits in `Bitboard`. Odin has nice syntax to iterate over the set flags in a bit-set, but an array of bit-sets presents a logistical challenge. I hacked at it for a couple of hours and came up with the following. Odin's implementation of iterators is, all considered, fairly easy.
 
 ```odin
 // The State machine
@@ -352,7 +352,7 @@ Which would bring the topic back to Groups, but there is another detour.
 
 ## Slotmaps
 
-In my implementation of Havannah (linked earlier), I used the `slotmap` Rust crate to track groups. Odin does not have a slotmap[^4] in its core library. There is [a sample showcase implementation by Ginger Bill](https://gist.github.com/gingerBill/7282ff54744838c52cc80c559f697051), but I wanted to try my hand at this FFI thing. With help from the Rust and Odin discords to navigate the FFI of both languages, I did the following, and it works! Almost statically typechecked from both sides, too.
+In my implementation of Havannah (linked earlier), I used the `slotmap` Rust crate to track groups. Odin does not have a slotmap[^4] in its core library. There is [a sample showcase implementation by Ginger Bill](https://gist.github.com/gingerBill/7282ff54744838c52cc80c559f697051), but I wanted to try my hand at this FFI thing. With help from the Rust and Odin discords to navigate the FFI of both languages, I did the following, and it works! Almost statically type checked from both sides, too.
 
 [^4]: Generational arena, generational handles, handle-based map, a rose by any other name.
 
@@ -433,7 +433,7 @@ foreign slotmap {
 }
 ```
 
-Odin's type system allows a `rawptr` to really be cast to .. any pointer. So here all the types I *know* are the same, regardless of C's type erasure, are marked with the same alias. Even though, as far as the C ABI is concerned, both `Slot_Map` and `Sm_Item` are `rawptr`s, but *I* know the difference. Conveniently, `Sm_Item` can now be easily derefrenced to get the underlying Group without casting.
+Odin's type system allows a `rawptr` to really be cast to .. any pointer. So here all the types I *know* are the same, regardless of C's type erasure, are marked with the same alias. Even though, as far as the C ABI is concerned, both `Slot_Map` and `Sm_Item` are `rawptr`s, but *I* know the difference. Conveniently, `Sm_Item` can now be easily dereferenced to get the underlying Group without casting.
 
 Having done that, and as much as I am pleased with myself for getting this to work, I do not like that the keys are `u64`s. They are *large*: much larger than any number of groups/indices required. Even in the unlikely event of each tile placed forming its own group, there would be a maximum of 126 groups (2 x 63). Eight bits would be enough to have a unique key for every possible group in the game. Something to optimize later, perhaps?
 
@@ -469,7 +469,7 @@ group_life :: proc(grp: ^Group) -> int {
 }
 ```
 
-To track groups, two fields are added to the Game Object: one for each player. Additionally, a "Group Map" of sorts might be needed to quickly look up the group any cell belongs to. (This is the initial idea, but keeping all these things in sync seems daunting. There could be a better design that is only revealed with a conrete implementation.)
+To track groups, two fields are added to the Game Object: one for each player. Additionally, a "Group Map" of sorts might be needed to quickly look up the group any cell belongs to. (This is the initial idea, but keeping all these things in sync seems daunting. There could be a better design that is only revealed with a concrete implementation.)
 
 Revisiting the `Game` struct from before:
 
@@ -523,7 +523,7 @@ So far, I made no mention of the game's rules, only talking about its physical p
 
 - Each **Tile** has a specific set of sides it can connect to, encoded, visually, on the Tile itself.
 - Each Tile *must* match its neighboring Tiles in connections. **Connected** sides must match and **Separated** sides must match.
-- Board edges are cosidered neutral Separateds.
+- Board edges are considered neutral Separateds.
 
 ### Groups
 
@@ -540,7 +540,7 @@ So far, I made no mention of the game's rules, only talking about its physical p
 
 *Finally*
 
-- Bears repeating: A Tile can only be placed where it matches its neighboars in Connected and Separated sides.
+- Bears repeating: A Tile can only be placed where it matches its neighbours in Connected and Separated sides.
 - Firstly, the Guest, first player, starts by placing any Tile anywhere.
 - Afterwards, a Tile can only be placed *adjacent to an enemy Tile*, with one exception.
 - A Tile can be placed where it is not adjacent to an enemy Tile *if and only if* it is extending a Group that is a whole Section.
@@ -554,7 +554,7 @@ So far, I made no mention of the game's rules, only talking about its physical p
 
 - The Game ends when both players pass consecutively.
 - The winner is the Player with the highest score.
-- The score is the amount of Tiles controlled on the boad *minus* the Tiles still in Hand.
+- The score is the amount of Tiles controlled on the board *minus* the Tiles still in Hand.
 
 ## Moves, and Game Object - Third Draft
 
@@ -805,7 +805,7 @@ group_extend_or_merge :: proc(move: Move, game: ^Game) -> (ok: bool = true) {
 }
 ```
 
-Now, what to do if it *is* a potential suicide? First of all, it is not possible to know whether it is a suicide or not without doing everything already done in `group_extend_or_merge` anyway. If it were a Suicide, the final, collasced Group would have no Liberties, and therefore it would be an easy decision to simply flip its Controller and swap its allegiance.
+Now, what to do if it *is* a potential suicide? First of all, it is not possible to know whether it is a suicide or not without doing everything already done in `group_extend_or_merge` anyway. If it were a Suicide, the final, coalesced Group would have no Liberties, and therefore it would be an easy decision to simply flip its Controller and swap its allegiance.
 
 The problem lies in how to merge it with its capturing Group(s). It needs to be merged to maintain an accurate count of Liberties, as the count of Liberties is clearly being used to test whether it needs to be captured or not!! (Not in *this* move. but in subsequent ones.)
 
@@ -839,7 +839,7 @@ Rethought_Group :: struct {
 }
 ```
 
-Much cleaner! Surprisingly, Odin allows bitwise OR over enumerations.[^7] If the resulting value has no tag assigned, it becomes a `BAD_ENUM_VALUE` and may potentially wreck the program. But if the numbers are assigned appropraitely, it can be made to always have a valid value.
+Much cleaner! Surprisingly, Odin allows bitwise OR over enumerations.[^7] If the resulting value has no tag assigned, it becomes a `BAD_ENUM_VALUE` and may potentially wreck the program. But if the numbers are assigned appropriately, it can be made to always have a valid value.
 
 [^7]: Rust would *totally* yell at me. Then tell me to implement the trait to define the behavior myself.
 
@@ -853,7 +853,7 @@ Liberty ------>   Liberty   Enemy   Member
 Enemy   ---------------->   Enemy   Member
 Member  ------------------------>   Member
 ```
-Great. Looks good to me. Let's roll with it. This is how `Group` works now. Should I need more states I shall think of other clever numbers to use. Then follow the compiler's erros about missing fields and correct those as needed.
+Great. Looks good to me. Let's roll with it. This is how `Group` works now. Should I need more states I shall think of other clever numbers to use. Then follow the compiler's errors about missing fields and correct those as needed.
 
 Compiler driven development !!
 
@@ -1126,7 +1126,7 @@ game_update_state_inner :: proc(move: Move, game: ^Game) {
     if len(surrounding_enemy_grps) == 0 {
         assert(
             group_life(blessed_grp) > 0,
-            "newly formed groups must have liberites or enemy connections",
+            "newly formed groups must have liberties or enemy connections",
         )
         blessed_grp.extendable = true
         return
@@ -1349,7 +1349,7 @@ Now, back to Oscillation. What's that again?
 
 When a Group has no Liberties, it is converted to the other side. If, upon conversion, it  *still* has no Liberties, it flips again, and .. well .. oscillates. That's illegal!
 
-So Oscillation as a result of a Move can only happen if a Group has only one Liberty and the Mone is on *that* Hex. So I will make a number of assumptions here:
+So Oscillation as a result of a Move can only happen if a Group has only one Liberty and the Move is on *that* Hex. So I will make a number of assumptions here:
 
 1. If the Move connects only to *extendable* Groups (Friendly or Enemy), and takes away their last Liberty, it is Oscillation.
 2. If the Move connects to a usual Group (Friendly or Enemy), it is *not* Oscillation, but either a Capture or a Suicide. (If the surrounding Groups had no other Liberties of their own, they'd be Captured already).
@@ -1456,7 +1456,7 @@ This is an artifact of how the `slotmap` crate does its thing, as I found out. T
 
 The easy fix would be perhaps to annotate all three lookups with companion look ups to see the owner of the `Tile` in the corresponding `game.board` index. But this feels like a bandaid, that also adds another failure point.
 
-Trying different values I came across another bug that apparently triggered an assertion, but it was whether a `slotmap` contans a key or not. So a fix for this first bug is needed before any procession.
+Trying different values I came across another bug that apparently triggered an assertion, but it was whether a `slotmap` contains a key or not. So a fix for this first bug is needed before any procession.
 
 ## Rethinking the Need for `slotmap`
 
@@ -1464,13 +1464,13 @@ Using a Rust crate for this functionality has a couple of pain points already:
 
 - I have mentioned this before, but `u64` Keys are *huge*. They are much larger than what is needed in this game. The amount of Groups the entire game cannot actually exceed 126. (If all Tiles were played and each Tile had its own Group, which is also impossible.)
 - Speed of access: the slotmaps are behind pointers and the Groups are behind pointers, and this is checked and accessed multiple times per move.
-- Compilation: while this set up works fine on my machine <small>TM</small>, compiling a shim Rust crate separately from the main Odin codebase is a bit more effort than what is usally needed. If this were to be set up for users, I would need to include a build system.
+- Compilation: while this set up works fine on my machine <small>TM</small>, compiling a shim Rust crate separately from the main Odin codebase is a bit more effort than what is usually needed. If this were to be set up for users, I would need to include a build system.
 - WASM: Add to that, while `slotmap` itself can be compiled to WASM just fine, compiling two languages into one WASM module is .. not the easiest path forward.
-- Last but not least, undoing the Game state (somethign which is needed for engines) would be a *lot* easier if there were no pointers involved.
+- Last but not least, undoing the Game state (something which is needed for engines) would be a *lot* easier if there were no pointers involved.
 
 So now what? Is a slotmap-like data structure even the correct decision at all, actually? Slotmap's advantage is reusing existing allocations for deleted items, while *not* reusing the handles/indices. But if it lives all on the stack, say through a `[CELL_COUNT]Group` array, it is not possible to grow memory dynamically as needed (since it is all statically allocated), and one would have to allocate for the worst case scenario *anyway* removing the main advantage there.
 
-One option is to put Groups in a fixed array, and use indices into that array as keys, and simply stop using that index whenever a Group dies. While a real game is never getting to 126 Groups at once, and there is no game database of played Dominions games to analyze and determine the maximum number of Groups in a real game is. Using [Mindsport's applet](https://mindsports.nl/index.php/dagaz/954-dominions), I managed to get to about 92 individual living "groups" at the same time before I got bored.
+One option is to put Groups in a fixed array, and use indices into that array as keys, and simply stop using that index whenever a Group dies. While a real game is never getting to 126 Groups at once, and there is no game database of played Dominions games to analyze and determine the maximum number of Groups in a real game is. Using [Mindsports' applet](https://mindsports.nl/index.php/dagaz/954-dominions), I managed to get to about 92 individual living "groups" at the same time before I got bored.
 
 How would this look like, though? Separate arrays, one for each player? One array for both? If the second, how to distinguish between friendly and enemy groups storage?
 
@@ -1529,7 +1529,7 @@ if grp.extendable { // etc
 grp.extendable = true
 ```
 
-But what is programming if not suppressing compiler warnings and ignoring the advice of more experienced practioners? *Especially* the author of the language you are writing in?
+But what is programming if not suppressing compiler warnings and ignoring the advice of more experienced practitioners? *Especially* the author of the language you are writing in?
 
 Back to business. The first thing needed is to reimplement the `slotmap` API for the new `Group_Store`. Here is the original:
 
@@ -1607,7 +1607,7 @@ Testing with different pairs of first moves has gone swimmingly. Things get capt
 
 ## Visualizing the Board
 
-A hexagonal board does not quite lend itself to being nicely printed in the terminal. Even if the pieces were simple stonees (or chess pieces, available nicely as Unicode code points), However, solutions as old as time, or at least as old as monospaced fonts, exist.
+A hexagonal board does not quite lend itself to being nicely printed in the terminal. Even if the pieces were simple stones (or chess pieces, available nicely as Unicode code points), However, solutions as old as time, or at least as old as monospaced fonts, exist.
 
 ```
 # pointy representation
@@ -1713,9 +1713,9 @@ Perfect. Every other pair of opening moves I tried works as expected. So now is 
 
 ## The Example Game
 
-The full list of moves for the example game is [here, in the source code of the game's page](https://mindsports.nl/index.php/the-pit/526-dominions). Parsing the moves is a fun exercise, even if I will not use the eame notation eventually, so I will do that.
+The full list of moves for the example game is [here, in the source code of the game's page](https://mindsports.nl/index.php/the-pit/526-dominions). Parsing the moves is a fun exercise, even if I will not use the same notation eventually, so I will do that.
 
-The first task is to know how the coordinates map from the Mindsports representation to mine. This one is straightforward, if a bit tricky. The letters are the rows, or the `hex.y` cooredinate, so `A to Q` map to `8 to -8` (yes, backwards.) The columns map `1 to 17` to `-8 to 8`. The center hex goes from `i9` to `{0, 0}`.
+The first task is to know how the coordinates map from the Mindsports representation to mine. This one is straightforward, if a bit tricky. The letters are the rows, or the `hex.y` coordinate, so `A to Q` map to `8 to -8` (yes, backwards.) The columns map `1 to 17` to `-8 to 8`. The center hex goes from `i9` to `{0, 0}`.
 
 The Tile numbers do not map as neatly. `P63` is the same, but not the others. It is important to know how the directions map between both representations. Amusingly, I found out that the `P1` tile is *also* the same, but the Mindsports representation advances counter-clockwise, while mine does it clockwise. So `Top_Left`, above being `32`, is here marked as `2`, and so on. That gives us this:
 
@@ -1820,7 +1820,7 @@ Now it is possible to go through the game move by move and compare, manually, th
 Running the engine hit an assertion at move 44. All the moves prior to that, including Suicides (amusingly enough), worked fine, but move 44 has the first Capture in the game. The move right after this position, where the first player captures at `g2`:
 
 ![Dominions Position Board](./bug2board.png)
-![Dominions Poisition ASCII](./bug2ascii.png)
+![Dominions Position ASCII](./bug2ascii.png)
 
 (They are the same. You can even see the first player's suicides as black numbers starting with `0`).
 
@@ -1837,7 +1837,7 @@ The capture logic can be found [above](#game-update-state-inner-second-draft). T
     }
 ```
 
-I am not sure what this was supposed to accomplish, to be honest; and commenting it out, amusingly, progresses the game and resolves that move, until move 50 when it crashes. Unfortunatly between both moves the state is *all wrong*. Either way, the assert that fails is slightly ahead of that loop.
+I am not sure what this was supposed to accomplish, to be honest; and commenting it out, amusingly, progresses the game and resolves that move, until move 50 when it crashes. Unfortunately between both moves the state is *all wrong*. Either way, the assert that fails is slightly ahead of that loop.
 
 ```odin
     // == go over surrounding enemy groups to see if they're dead.
@@ -2063,11 +2063,11 @@ Running it quickly shows it is removed in that `level_2_surrounding_friendlies` 
     }
 ```
 
-Now that the example game runs to completion without hitting any assertions, time to check the state's correctness. The final position in the game seems to be all correct, so I will consder this implementation now bug free. Maybe for part 2.
+Now that the example game runs to completion without hitting any assertions, time to check the state's correctness. The final position in the game seems to be all correct, so I will consider this implementation now bug free. Maybe for part 2.
 
 ## What's left?
 
-Work is not done on this by any means, even if I ascertained it is 100% bug free. (the legal move genrator is not thoroughly tested really.) But I have spent a month, on and off, on this and my wife is frankly sick of me. So here is a list of what is left to implement in round 2:
+Work is not done on this by any means, even if I ascertained it is 100% bug free. (the legal move generator is not thoroughly tested really.) But I have spent a month, on and off, on this and my wife is frankly sick of me. So here is a list of what is left to implement in round 2:
 
 1. Undoing Moves: Necessary for engine implementations, and easy in theory. All is needed really is to copy the game's state into a dynamic array of previous game states. To save memory, only saving previous `Board`s is required, as they actually have enough data to generate all the remaining fields.
 2. An interactive interface. A way to interact with the game outside of writing procedure calls in `main()` Either through a wasm module or a CLI interface, or a common interface either one can use. 
@@ -2079,11 +2079,11 @@ So throughout working on this article (for almost a whole month) I advanced my k
 
 1. The Odin programming language,
 2. Interop between Odin and Rust (and any other language really),
-3. HTML and CSS and Zola temptlating (in setting up this website),
+3. HTML and CSS and Zola templating (in setting up this website),
 4. Basic usage of LLDB debugging,
 
 So,  this was a fun ride. But it is time to move on to something else. 
 
-The code here is in the [`bustan` repositry](https://github.com/asibahi/bustan). You can see the evolution of the code, and much of what is in this article, through the git history.
+The code here is in the [`bustan` repository](https://github.com/asibahi/bustan). You can see the evolution of the code, and much of what is in this article, through the git history.
 
 Until later.
