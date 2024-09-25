@@ -7,7 +7,9 @@ I have been doing some thinking about what my ideal code editor should be. I cur
 
 [^rtl]: There are *Markdown* editors that support Arabic decently enough, such as [Bear](https://bear.app) and Obsidian. But those do not handle HTML and Sass and what goes into editing a website, even ones as simple as this.
 
-I tried several editors (honestly none more than 5 minutes) and I always go back to VSCode because of how comfortable it is. I tried [Helix](https://helix-editor.com), but could not live in the Terminal or modal editing. Tried Zed .. and it honestly just felt weird. Looked at [CodeEdit](https://www.codeedit.app), which is a really interesting project that brings the XCode aesthetic down to code editor level, but it is still a work in progress, and it still doesn't deal with RTL properly.
+I tried several editors (honestly none more than 5 minutes) and I always go back to VSCode because of how comfortable it is. I tried [Helix](https://helix-editor.com), but could not live in the Terminal or modal editing. Tried Zed .. and it honestly just felt weird. Looked at [CodeEdit](https://www.codeedit.app), which is a really interesting project that brings the XCode aesthetic down to code editor level, but it is still a work in progress, and it still doesn't deal with RTL properly.[^cot]
+
+[^cot]: 2024-09-26: I also came across [CotEditor](https://coteditor.com). Looks nice and has good CJK support, with vertical text.
 
 This post is more for my own records than anything. Whenever I start on the great My Ideal Code Editor (Code name: MICE, or KTB, or whatever), I have a nice feature list to stick to.
 
