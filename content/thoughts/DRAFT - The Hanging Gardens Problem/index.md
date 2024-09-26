@@ -647,10 +647,53 @@ Here are two sample results, which appear to be correct. The second result is in
 
 ---
 
-## Packed Garden
+## Packed Gardens
 
 As the solution for the Square Gardens works, it is obvious that simply changing the data structures and the hardcoded values would solve the 3D solution. I will get to that, but first, I want to try a Packed solution first.
 
 The Packed solution has a much simpler to state goal: Pack all 64 cubes into a 4x4x4 cube. Obviously, in this version, the Red faces can (actually have to) face each other. *Only* Red faces are allowed to face outside. In his [page about the set](https://mindsports.nl/index.php/puzzles/3d/394-the-china-cube), Freeling does actually provide one Packed solution, with a caveat.
 
 ![Packed solution for the Cube Gardens](chinacube_sol1_2d_466x466.gif)
+
+The caveat here is that the Red Cube must be contained inside, and not on the edge. It *is* a difficult requirement, but the provided solution achieves it, at the cost of another floating group at the bottom left of the image above.
+
+### Initialization
+
+Nonetheless, as it is only a 4x4x4 cube, the search space for the solution is much smaller. There are *no* `Air` tiles in here: it is packed. Adding the additional requirement of the Red Cube being wholly contained actually simplifies the solution's initialization. Start the Blue cube at `(1,1,1)` coordinates, and the Red cube at `(2,2,2)` coordinates. Any other placement of the two Cubes would actually be a mirror image, or a rotation, of this specific arrangement.
+
+Here are the types, which, for the most part, are shared between the Packed Gardens and the Hanging Gardens, and the initialization function as described.
+
+```odin
+Side :: enum u8 { North, East, South, West, Top, Bottom }
+Tile :: distinct bit_set[Side; u8]
+
+Cell :: Maybe(Tile)
+Candidates :: distinct bit_set[0..<64; u64]
+
+Grid :: struct {
+    cells:      [4][4][4]Cell,
+    candidates: [4][4][4]Candidates,
+}
+
+Candidate_Set :: [Side]Candidates
+
+grid_init :: proc () -> (ret: Grid) {
+    // Fille the candidate Grid
+    ret.candidates = ~Candidates{ 0, 63 }
+
+    // Place Blue and Red cubes respectively
+    ret.cells[1][1] = ~Tile{}
+    ret.cells[2][2] = Tile{}
+
+    // Placeholder for now
+    grid_propagate(&ret)
+
+    return 
+}
+
+```
+
+### Propagation
+
+TODO HARDCODED 3D CONNECTIONS THEN PROPAGATION FUNCTION
+
