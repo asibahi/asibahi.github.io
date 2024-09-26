@@ -229,4 +229,4 @@ fn build_line(input: ShapedText,
 ```
 I hope you enjoyed this read and that you found it educational. In the next post I will write how the `build_line()` function can be adapted for non-Latin scripts (namely Arabic because that's all I know).
 
-*Edit on 12-Apr-2023: [Here is Part 2](@/thoughts/Practical%20Arabic%20Justification/index.md)*
+*Edit on 12-Apr-2023: [Here is Part 2](@/thoughts/2023-04-12-practical-arabic-justification/index.md)*

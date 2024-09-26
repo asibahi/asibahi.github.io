@@ -1,13 +1,13 @@
 +++
 title = "The Hanging Gardens Problem"
 description = "Exploring the Link between Shrödinger's Cat and Sudoku Solvers"
-date = 2024-09-20 # temporary to appease zola
+date = 2024-09-20 # temporary to appease Zola
 draft = true
 +++
 
 This is an interesting puzzle inspired by Christian Freeling's tile set [The China Cube](https://mindsports.nl/index.php/puzzles/3d/394-the-china-cube). As it really has nothing to do with China, I call it **the Hanging Gardens Problem**. Imagine each cube as a section of the Garden, and connections to other cubes are paths and stairways.[^1]
 
-[^1]: The original tile set inspired a number of games by Christian Freeling. One of them is Dominions, for which I wrote [an implementation in Odin](@/thoughts/The%20Garden%20of%20Odin/index.md).
+[^1]: The original tile set inspired a number of games by Christian Freeling. One of them is Dominions, for which I wrote [an implementation in Odin](@/thoughts/2024-09-01-the-garden-of-odin/index.md).
 
 Here is a nice drawing showing the full set of 64 Cubes, from Freeling's site.
 
@@ -647,5 +647,10 @@ Here are two sample results, which appear to be correct. The second result is in
 
 ---
 
-## Packed Solution
+## Packed Garden
 
+As the solution for the Square Gardens works, it is obvious that simply changing the data structures and the hardcoded values would solve the 3D solution. I will get to that, but first, I want to try a Packed solution first.
+
+The Packed solution has a much simpler to state goal: Pack all 64 cubes into a 4x4x4 cube. Obviously, in this version, the Red faces can (actually have to) face each other. *Only* Red faces are allowed to face outside. In his [page about the set](https://mindsports.nl/index.php/puzzles/3d/394-the-china-cube), Freeling does actually provide one Packed solution, with a caveat.
+
+![Packed solution for the Cube Gardens](chinacube_sol1_2d_466x466.gif)

@@ -3,7 +3,7 @@ title = "Thoughts on Arabic Justification"
 date = "2023-04-12"
 +++
 
-For the tl;dr, skip to [Priority](#priority-list). This article is a follow up to [this one](@/thoughts/Linebreaking/index.md).
+For the tl;dr, skip to [Priority](#priority-list). This article is a follow up to [this one](@/thoughts/2023-04-02-linebreaking/index.md).
 
 ## Background Reading 
 Here are some links that you might want to look at:
@@ -16,7 +16,7 @@ Here are some links that you might want to look at:
 
 ## Intro
 
-Justification is a nasty and difficult problem. When justifying over sufficiently long lines, the [Knuth-Plass algorithm](Linebreaking.md) is more than enough. However, when the lines are narrow, for example in a newspaper column, there just are not enough words in a line to make small changes to the space between them unnoticeable, and you need to take more drastic measures.
+Justification is a nasty and difficult problem. When justifying over sufficiently long lines, the [Knuth-Plass algorithm](@/thoughts/2023-04-02-linebreaking/index.md) is more than enough. However, when the lines are narrow, for example in a newspaper column, there just are not enough words in a line to make small changes to the space between them unnoticeable, and you need to take more drastic measures.
 
 For English, and Latin (and Cyrillic?) script-based languages in general, the usual solution is [hyphenation](https://en.wikipedia.org/wiki/Hyphen#Justification_and_line-wrapping). This does not apply to every script. For example, the Japanese script have their own [justification algorithm](https://www.w3.org/TR/jlreq/?lang=en) that does not "just" add spaces between characters. Other scripts have their own rules going on.
 
@@ -107,7 +107,7 @@ First of all you need whether the font has `jalt`s or not. You could even ask th
 
 For example, if the user specifies using `ss16`, `ss17`, `ss18`, `ss19`, and `ss20` for justification, in this order, use those. If they don't, use `jalt` if available.
 
-Pseuorustcode time! I will be adjusting on the `build_line()` function from the [linebreaking](@/thoughts/Linebreaking/index.md) article.
+Pseuorustcode time! I will be adjusting on the `build_line()` function from the [linebreaking](@/thoughts/2023-04-02-linebreaking/index.md) article.
 
 ```rust
 fn build_line(input: ShapedText,

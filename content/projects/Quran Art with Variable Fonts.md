@@ -8,7 +8,7 @@ weight = 0
 
 This is two things:
 
-1. A practical application and exploration of the ideas discussed on [Practical Arabic Justification](@/thoughts/Practical%20Arabic%20Justification/index.md)
+1. A practical application and exploration of the ideas discussed on [Practical Arabic Justification](@/thoughts/2023-04-12-practical-arabic-justification/index.md)
 2. Printed art pieces to give to family, friends, and clients.
 
 There are multiple examples in the [Github repo](https://github.com/asibahi/nun/tree/master)
