@@ -163,13 +163,13 @@ An astute Sudoku solver would quickly be able to see that this initial list of c
 
 [^edges]: Nor does it into account the edges of the Grid (where only Red faces may, well, face.) However, the edges of the Grid are unlikely to be reached, so I will ignore that for now.
 
-It follows that for each placed `Cell` in `cells`, it must update the surrounding candidates. So a function that gives out the candidates per face is needed. This can almost just be hardcoded, since each number maps neatly to a specific square. It is possible to hard code it for each tile individually, but where is the fun in that.
+It follows that for each placed `Cell` in `cells`, it must update the surrounding candidates. So a function that gives out the candidates per face is needed. This can almost just be hardcoded, since each number maps neatly to a specific square. It is possible to hardcode it for each tile individually, but where is the fun in that.
 
 ```odin
 Candidate_Set :: [Side]Candidates // Enumerated arrays, a nice Odin feature.
 
 tile_connections :: proc (c: Cell) -> (ret: Candidate_Set) {
-    // Why not just hard code it all the way?
+    // Why not just hardcode it all the way?
     switch t in c {
     case Tile: 
         ret[.North] = {4, 5,  6,  7, 12, 13, 14, 15} if .North in t else {0}
@@ -212,8 +212,8 @@ grid_propagate :: proc (grid: ^Grid) -> bool {
 
         // if cell is a tile, make sure it is not a candidate anywhere else.
         if tile, ok := cell.(Tile); ok {
-            // stupid hack, don't ask
-            cand := tile_to_candidates(tile)
+            // Weird hack
+            cand := Candidates{ int(transmute(u8)tile) }
 
             // remove it everywhere with broadcast magic
             grid.candidates -= cand
@@ -319,7 +319,7 @@ grid_controlled_demolition :: proc (grid: ^Grid) -> bool {
             grid.candidates[t_x][t_y] = {0}
         } else {
             tile := transmute(Tile)i8(id)
-            cand := tile_to_candidates(tile) // seriously don't ask
+            cand := Candidates{ int(transmute(u8)tile) }
 
             grid.cells[t_x][t_y] = tile
             grid.candidates -= cand
@@ -682,8 +682,8 @@ grid_init :: proc () -> (ret: Grid) {
     ret.candidates = ~Candidates{ 0, 63 }
 
     // Place Blue and Red cubes respectively
-    ret.cells[1][1] = ~Tile{}
-    ret.cells[2][2] = Tile{}
+    ret.cells[1][1][1] = ~Tile{}
+    ret.cells[2][2][2] = Tile{}
 
     // Placeholder for now
     grid_propagate(&ret)
@@ -693,7 +693,216 @@ grid_init :: proc () -> (ret: Grid) {
 
 ```
 
-### Propagation
+### Cube Edges
 
-TODO HARDCODED 3D CONNECTIONS THEN PROPAGATION FUNCTION
+Unlike in the Square Gardens, this is not enough. While the candidates for the edges were safely ignored there, (as the the solution is unlikely to reach them), they must be encoded here, because they are integral. Time to hardcode the implementation! This is how the values are generated: 
 
+```odin
+generate_consts :: proc () {
+    for side in (~Tile{}) {
+        fmt.printf("%v_CONNECTED :: Candidates{{", side)
+        for i in 0..<64 {
+            tile := transmute(Tile)u8(i)
+            if side in tile do fmt.print(i, ",")
+        }
+        fmt.println("}")
+        fmt.printf("%v_NOT_CONNECTED :: Candidates{{", side)
+        for i in 0..<64 {
+            tile := transmute(Tile)u8(i)
+            if side not_in tile do fmt.print(i, ",")
+        }
+        fmt.println("}")
+    }    
+}
+```
+
+And this is the generated code (with light formatting editing). I have *no* idea if it is correct. The proof of the pudding is in the eating.
+
+```odin
+NORTH_CONNECTED  :: Candidates{ 1,  3,  5,  7,  9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63 }
+EAST_CONNECTED   :: Candidates{ 2,  3,  6,  7, 10, 11, 14, 15, 18, 19, 22, 23, 26, 27, 30, 31, 34, 35, 38, 39, 42, 43, 46, 47, 50, 51, 54, 55, 58, 59, 62, 63 }
+SOUTH_CONNECTED  :: Candidates{ 4,  5,  6,  7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31, 36, 37, 38, 39, 44, 45, 46, 47, 52, 53, 54, 55, 60, 61, 62, 63 }
+WEST_CONNECTED   :: Candidates{ 8,  9, 10, 11, 12, 13, 14, 15, 24, 25, 26, 27, 28, 29, 30, 31, 40, 41, 42, 43, 44, 45, 46, 47, 56, 57, 58, 59, 60, 61, 62, 63 }
+TOP_CONNECTED    :: Candidates{16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63 }
+BOTTOM_CONNECTED :: Candidates{32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63 }
+
+NORTH_NOT_CONNECTED  :: Candidates{ 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62 }
+EAST_NOT_CONNECTED   :: Candidates{ 0, 1, 4, 5, 8,  9, 12, 13, 16, 17, 20, 21, 24, 25, 28, 29, 32, 33, 36, 37, 40, 41, 44, 45, 48, 49, 52, 53, 56, 57, 60, 61 }
+SOUTH_NOT_CONNECTED  :: Candidates{ 0, 1, 2, 3, 8,  9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27, 32, 33, 34, 35, 40, 41, 42, 43, 48, 49, 50, 51, 56, 57, 58, 59 }
+WEST_NOT_CONNECTED   :: Candidates{ 0, 1, 2, 3, 4,  5,  6,  7, 16, 17, 18, 19, 20, 21, 22, 23, 32, 33, 34, 35, 36, 37, 38, 39, 48, 49, 50, 51, 52, 53, 54, 55 }
+TOP_NOT_CONNECTED    :: Candidates{ 0, 1, 2, 3, 4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47 }
+BOTTOM_NOT_CONNECTED :: Candidates{ 0, 1, 2, 3, 4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31 }
+```
+
+```odin
+tile_connections :: proc (c: Cell) -> (ret: Candidate_Set) {
+    switch t in c {
+    case Tile: 
+        ret[.North]  = .North  in t ? SOUTH_CONNECTED  : SOUTH_NOT_CONNECTED
+        ret[.East]   = .East   in t ? WEST_CONNECTED   : WEST_NOT_CONNECTED
+        ret[.South]  = .South  in t ? NORTH_CONNECTED  : NORTH_NOT_CONNECTED
+        ret[.West]   = .West   in t ? EAST_CONNECTED   : EAST_NOT_CONNECTED
+        ret[.Top]    = .Top    in t ? BOTTOM_CONNECTED : BOTTOM_NOT_CONNECTED
+        ret[.Bottom] = .Bottom in t ? TOP_CONNECTED    : TOP_NOT_CONNECTED
+    case:
+        ret = ~{}
+    }
+    return
+}
+```
+
+Then edit `grid_init` to adjust the candidates in the edge cubes accordingly. However, care must be taken as how these values translate there. For example, the westernmost cubes are the ones that do *not* have a connection on the `.West` side. Again, I am not currently sure how correct this is. The pudding is yet to be eaten.
+
+```odin
+grid_init :: proc () -> (ret: Grid) {
+    // Fille the candidate Grid
+    ret.candidates = ~Candidates{ 0, 63 }
+    for z in 0..<4 do for y in 0..<4 do for x in 0..<4 {
+        if x == 0 do ret.candidates[x][y][z] &= WEST_NOT_CONNECTED
+        if x == 3 do ret.candidates[x][y][z] &= EAST_NOT_CONNECTED
+        if y == 0 do ret.candidates[x][y][z] &= SOUTH_NOT_CONNECTED
+        if y == 3 do ret.candidates[x][y][z] &= NORTH_NOT_CONNECTED
+        if z == 0 do ret.candidates[x][y][z] &= BOTTOM_NOT_CONNECTED
+        if z == 3 do ret.candidates[x][y][z] &= TOP_NOT_CONNECTED
+    }
+
+    // Place Blue and Red cubes respectively
+    ret.cells[1][1][1] = ~Tile{}
+    ret.cells[2][2][2] = Tile{}
+
+    // still a placeholder
+    grid_propagate(&ret)
+
+    return 
+}
+```
+
+### Propagation and Controlled Demolition
+
+Applying minor changes from the Square Gardens' `grid_propgagate` and `grid_controlled_demolition`, they end up like this.
+
+```odin
+grid_propagate :: proc (grid: ^Grid) -> bool {
+    // Update candidates based on cells
+    for z in 0..<4 do for y in 0..<4 do for x in 0..<4 {
+        cell := grid.cells[x][y][z]
+        tc := tile_connections(cell)
+
+        if y < 3 do grid.candidates[x][y + 1][z] &= tc[.North]
+        if x < 3 do grid.candidates[x + 1][y][z] &= tc[.East]
+        if y > 0 do grid.candidates[x][y - 1][z] &= tc[.South]
+        if x > 0 do grid.candidates[x - 1][y][z] &= tc[.West]
+        // Top
+        if z < 3 do grid.candidates[x][y][z + 1] &= tc[.Top]
+        // Bottom
+        if z > 0 do grid.candidates[x][y][z - 1] &= tc[.Bottom]
+
+        if tile, ok := cell.(Tile); ok {
+            // Weird magic
+            cand := Candidates{ int (transmute(u8)tile) }
+        
+            grid.candidates -= cand
+            grid.candidates[x][y][z] = cand
+        }
+    }
+
+    any_collpased := false
+
+    // Update cells based on candidates
+    for z in 0..<4 do for y in 0..<4 do for x in 0..<4  {
+        cand := grid.candidates[x][y][z]
+        if cand == {} do return false
+
+        if grid.cells[x][y][z] == nil && card(cand) == 1 do for id in cand {
+            any_collpased = true
+
+            grid.cells[x][y][z] = transmute(Tile)u8(id)
+        }
+    }
+
+    success := true
+    if any_collpased do success = grid_propagate(grid) // recursion!!
+
+    return success
+}
+```
+
+```odin
+grid_controlled_demolition :: proc (grid: ^Grid) -> bool {
+    // all the shuffling 
+    rows := []int{ 0, 1, 2, 3 }
+    rand.shuffle(rows)
+    
+    cols := []int{ 0, 1, 2, 3 }
+    rand.shuffle(cols)
+
+    verts := []int{ 0, 1, 2, 3 }
+    rand.shuffle(verts)
+    
+    ids := []int{ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+                 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+                 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+                 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63}
+    rand.shuffle(ids)
+
+    t_x: int 
+    t_y: int 
+    t_z: int
+
+    min_card := max(int)
+
+    for z in verts do for y in cols do for x in rows {
+        c := card(grid.candidates[x][y][z])
+        (c > 1) or_continue
+
+        if c < min_card {
+            t_x = x
+            t_y = y
+            t_z = z
+            min_card = c
+        }
+
+        if min_card == 2 do break
+    }
+
+    for id in ids do if id in grid.candidates[t_x][t_y][t_z] {
+        tile := transmute(Tile)i8(id)
+        cand := Candidates{ id }
+
+        grid.cells[t_x][t_y][t_z] = tile
+        grid.candidates -= cand
+        grid.candidates[t_x][t_y][t_z] = cand
+
+        break
+    }
+
+    return grid_propagate(grid)
+}
+```
+
+And this does it. Figuring out how to ascertain how every cell in the grid has only one candidate took a bit of finessing and experimenting with Odin's core library `slice.all_in_proc`, but I ended up doing it manually.
+
+```odin
+main :: proc () {
+    grid := grid_init()
+
+    outer: for {
+        inner: for grid_controlled_demolition(&grid) {
+            for z in 0..<4 do for y in 0..<4 do for x in 0..<4 {
+                if card(grid.candidates[x][y][z]) != 1 do continue inner
+            }
+
+            break outer
+        }
+        grid = grid_init()
+    }
+    
+    grid_print(&grid) // <-- this one is a bit more interesting.
+}
+```
+
+TODO : Comment on how this might take a long time. Explore threading.
+
+### Solution Output
+
+TODO:  Figuring out a graphical solution. Try out Odin's vendor libraries.
