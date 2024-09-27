@@ -901,7 +901,9 @@ main :: proc () {
 }
 ```
 
-TODO : Comment on how this might take a long time. Explore threading.
+This works, and thankfully halts. However, the execution time, in the few times I ran it, varied anything between 3 seconds and one minute. This obviously depends on how *lucky* the random seed is. Using threads would help to get a result faster.
+
+Printing the solution naïvely prints a bunch of numbers, with no repeats (as far I could tell), but to verify that the solution is correct it needs to be outputted into a readable format. THe "easy" solution is to put together a dictionary of images and make a collage, much like the image at the top of the section, but that is not very interesting. 
 
 ### Solution Output
 
