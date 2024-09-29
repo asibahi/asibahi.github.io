@@ -897,7 +897,7 @@ main :: proc () {
         grid = grid_init()
     }
     
-    grid_draw(&grid) // <-- this one is a bit more interesting.
+    grid_draw(grid) // <-- this one is a bit more interesting.
 }
 ```
 
@@ -1150,6 +1150,188 @@ Miracolously, howver, no matter when I pause it, the connections between adaject
 
 ![organized mesh of colors](fourth_test.png)
 
-### Proper Camera Angle
+### Final Visuals
+
+After a bit of trial and error and experimenting with different colors and distances and camera positions, I ended up with these constants and draw functions.
+
+```odin
+SCREEN_WIDTH  :: 800
+SCREEN_HEIGHT :: 800
+
+CUBE_DISTANCE_X :: 6.0
+CUBE_DISTANCE_Y :: 6.0
+CUBE_DISTANCE_Z :: 2.5
+
+CENTER_POINT :: [3]f32 {
+    1.5 * CUBE_DISTANCE_X,
+    1.5 * CUBE_DISTANCE_Y,
+    1.5 * CUBE_DISTANCE_Z
+}
+
+main :: proc () {
+    // boring boilerplate
+
+    camera := rl.Camera3D {
+        position   = ({-7, -7, 15} + CENTER_POINT),
+        target     = CENTER_POINT,
+        up         = {0.0, 0.0, 1.0},
+        fovy       = 35,
+        projection = .ORTHOGRAPHIC,
+    }
+
+    // other boring boilerplate
+    
+    rl.ClearBackground(rl.Color{ 240, 240, 240, 255 })
+    
+    // you know
+    
+    pos  := rl.Vector3{
+        f32(x) * CUBE_DISTANCE_X,
+        f32(y) * CUBE_DISTANCE_Y,
+        f32(z) * CUBE_DISTANCE_Z,
+    } 
+
+    // more of it
+    
+    rl.DrawCubeV(pos, size, color)
+    rl.DrawCubeWiresV(pos, size, rl.BLACK)
+
+    if .North  in tile {
+        end_pos := pos + {0,  CUBE_DISTANCE_Y / 2, 0}
+        rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.ORANGE)
+        rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+    }
+    if .South  in tile {
+        end_pos := pos + {0, -CUBE_DISTANCE_Y / 2, 0}
+        rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.ORANGE)
+        rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+    }
+    if .East   in tile {
+        end_pos := pos + { CUBE_DISTANCE_X / 2, 0, 0}
+        rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.DARKGREEN)
+        rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+    }
+    if .West   in tile {
+    end_pos := pos + {-CUBE_DISTANCE_X / 2, 0, 0}
+        rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.DARKGREEN)
+        rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+    }
+    if .Top    in tile {
+        end_pos := pos + {0, 0,  CUBE_DISTANCE_Z / 2}
+        rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.YELLOW)
+        rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+    }
+    if .Bottom in tile {
+        end_pos := pos + {0, 0, -CUBE_DISTANCE_Z / 2}
+        rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.YELLOW)
+        rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+    }
+    // end of proc boilerplate
+}
+```
+
+![final coloring](fifth_example.png)
+
+### Producing an Image
+
+Well, now that apparently all the logic and visuals are top notch and as clear as they can be, I do not actually want a visual of the solver solving and taking for ever. I only want a final image. So I will revert `main` to what it was before, and adjust `grid_draw` so it only saves an image to disk, rather than opening a window and waiting for me to take a screenshot.
+
+The code is mostly the same as before, only without starting a loop. `raylib` has functions to render a texture and save it as an image without third party libraries, so I just use those.
+
+This is the final `grid_draw` and its resultant image
+
+```odin
+grid_draw :: proc(grid: Grid) {
+	rl.SetConfigFlags({.WINDOW_HIDDEN})
+	rl.InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "")
+	defer rl.CloseWindow()
+
+	camera := rl.Camera3D {
+		position   = ({7, 7, -15} + CENTER_POINT),
+		target     = CENTER_POINT,
+		up         = {0.0, 0.0, 1.0},
+		fovy       = 35,
+		projection = .ORTHOGRAPHIC,
+	}
+
+	txtr := rl.LoadRenderTexture(SCREEN_WIDTH, SCREEN_HEIGHT)
+
+	{	// Drawing here
+		rl.BeginTextureMode(txtr)
+		defer rl.EndTextureMode()
+
+		rl.BeginDrawing()
+		defer rl.EndDrawing()
+
+		rl.ClearBackground(rl.Color{ 240, 240, 240, 255 })
+
+		rl.BeginMode3D(camera)
+		defer rl.EndMode3D()
+
+		for z in 0 ..< 4 do for y in 0 ..< 4 do for x in 0 ..< 4 {
+			tile := grid.cells[x][y][z].(Tile) or_continue
+			grade := u8(card(tile))
+
+			pos := rl.Vector3{
+				f32(x) * CUBE_DISTANCE_X,
+				f32(y) * CUBE_DISTANCE_Y,
+				f32(z) * CUBE_DISTANCE_Z
+			}
+
+			size := rl.Vector3{1.0, 1.0, 1.0}
+
+			b := (max(u8) / 6) * grade
+			r := max(u8) - b
+
+			color := rl.Color{r, 0, b, 255}
+
+			rl.DrawCubeV(pos, size, color)
+			rl.DrawCubeWiresV(pos, size, rl.BLACK)
+
+			if .North in tile {
+				end_pos := pos + {0, CUBE_DISTANCE_Y / 2, 0}
+				rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.ORANGE)
+				rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+			}
+			if .South in tile {
+				end_pos := pos + {0, -CUBE_DISTANCE_Y / 2, 0}
+				rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.ORANGE)
+				rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+			}
+			if .East in tile {
+				end_pos := pos + {CUBE_DISTANCE_X / 2, 0, 0}
+				rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.DARKGREEN)
+				rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+			}
+			if .West in tile {
+				end_pos := pos + {-CUBE_DISTANCE_X / 2, 0, 0}
+				rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.DARKGREEN)
+				rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+			}
+			if .Top in tile {
+				end_pos := pos + {0, 0, CUBE_DISTANCE_Z / 2}
+				rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.YELLOW)
+				rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+			}
+			if .Bottom in tile {
+				end_pos := pos + {0, 0, -CUBE_DISTANCE_Z / 2}
+				rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.YELLOW)
+				rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+			}
+		}
+	}
+
+	img := rl.LoadImageFromTexture(txtr.texture)
+	rl.ExportImage(img, "result.png")
+}
+```
+
+![Packed Squares Solution](packed_garden.png)
+
+---
+
+## Hanging Gardens
+
+With the Square Gardens and the Packed Gardens out of the way, time to return to the original problem. Much of the different pieces of the solution are already in place, and it is just a question of assembling them together.
 
 
