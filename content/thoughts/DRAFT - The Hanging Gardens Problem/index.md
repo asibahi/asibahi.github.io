@@ -897,7 +897,7 @@ main :: proc () {
         grid = grid_init()
     }
     
-    grid_print(&grid) // <-- this one is a bit more interesting.
+    grid_draw(&grid) // <-- this one is a bit more interesting.
 }
 ```
 
@@ -907,4 +907,249 @@ Printing the solution naïvely prints a bunch of numbers, with no repeats (as fa
 
 ### Solution Output
 
-TODO:  Figuring out a graphical solution. Try out Odin's vendor libraries.
+Simply printing out the resultant grid to console is not a very useful output. With the Square Gardens, it is possible to verify the correctness of the result by simply checking, visually, that each number/square is the only one in the grid that has neighbors in a specific configuration.
+
+In other words, look at this grid given from before (with pointless empty spaces removed and the Red Square `00` added):
+
+```
+|  |  |  |  |  |  |
+|  |00|  |  |02|  |
+|  |  |03|07|12|  |
+|  |  |11|14|  |  |
+|  |  |09|15|04|  |
+|  |  |  |10|  |  |
+|  |01|05|13|06|  |
+|  |  |  |  |08|  |
+|  |  |  |  |  |  |
+```
+
+It is easy to verify that, for example, `08` is literally the only tile that has only one connection to the top (and whether in code that's `North` or `South` is irrelevant to the correctness of the solution.) `14`, for example, is the only tile that has only three connections to the top, left, and bottom, and so on for all of them.
+
+For the packed solution, it is harder to verify that over text output. One solution would be to create a little image for every cube, (as Freeling's provided solution does) and pack them together. The other solution is to render a 3D image of the solution and visually inspect it that way.
+
+Looking over Odin's `vendor` libraries, and asking around for ideas how to do that, I could not figure out how to draw on an image canvas (the way the [`imageproc`](https://docs.rs/imageproc/latest/imageproc/) lets me do in Rust.) But there are a few bindings to different graphics libraries, and word on the street was that [`raylib`](https://www.raylib.com) is the simplest solution for this sort of thing.
+
+I spent a day playing around with `raylib`'s tutorials and asking for help on the Discord. The API is ... weirder than I am used to, to say the least. But it looks simple enough. To draw a window with a render scene, the code is the following:
+
+```odin
+import rl "vendor:raylib"
+
+grid_draw :: proc (grid: Grid) {
+    SCREEN_WIDTH  :: 400
+    SCREEN_HEIGHT :: 200
+
+    // raylib must start with this.
+    rl.InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "")
+
+    // and end with this.
+    defer rl.CloseWindow()
+
+    camera := rl.Camera3D{
+        position   = ({10.0, -5.0, 5.0} + 2.5), 
+        target     = {2.5, 2.5, 2.5},
+        up         = {0.0, 1.0, 0.0}, 
+        fovy       = 50, 
+        projection = .ORTHOGRAPHIC
+    }
+
+    for !rl.WindowShouldClose() {
+        rl.UpdateCamera(&camera, .THIRD_PERSON)
+
+        // This honestly weird pattern is how everything in raylib must work
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+
+        rl.ClearBackground(rl.WHITE)
+
+        rl.BeginMode3D(camera)
+        defer rl.EndMode3D()
+
+        // draw 3D things here.
+    }
+}
+```
+
+Just to test things out, I will try drawing each cube with a different shade based on how many connections it has. The Blue cube shall be blue and the Red cube shall be red, and the other cubes will be different shades of purple.
+
+```odin
+for z in 0..<4 do for y in 0..<4 do for x in 0..< 4 {
+    tile := grid.cells[x][y][z].(Tile) or_continue
+    grade := u8(card(tile))
+
+    b := (max(u8) / 6) * grade
+    r := max(u8) - b
+
+    rl.DrawCubeV({f32(x), f32(y), f32(z)}, 1.0, {r, 0, b, 255})
+}
+```
+
+And now: the moment of truth `odin run .`
+
+![weird mush of colors](first_test.png)
+
+I have *no* idea what's going on here. Everything is mushed together and the screen is tiny. Upping the screen's resolution (to `800, 400`), multiplying the position by `2.0` would be a start, and bringing the camera closer would be a decent start.[^iterating] 
+
+[^iterating]: Iterating on this would be a lot more pleasant if generating the solution was faster. Maybe I should not have skipped that distributing work across threads step.
+
+![different much of colors](second_test.png)
+
+Ah .. much better already. This actually rotates (but not zooms) with the mouse movement, thanks to that `.THIRD_PERSON` setting up there. Time to draw the lines, and better organize the code while I am at it. Here is the full function. (I do not actually expect this to be correct.)
+
+```odin
+grid_draw :: proc(grid: Grid) {
+    SCREEN_WIDTH  :: 1200
+    SCREEN_HEIGHT :: 600
+
+    CUBE_DISTANCE :: 3.0
+    CENTER_POINT  :: 2.5 * CUBE_DISTANCE
+
+    rl.InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "")
+    defer rl.CloseWindow()
+
+    camera := rl.Camera3D {
+        position   = ({10.0, -5.0, 5.0} + CENTER_POINT),
+        target     = CENTER_POINT,
+        up         = {0.0, 1.0, 0.0},
+        fovy       = 30,
+        projection = .ORTHOGRAPHIC,
+    }
+
+    for !rl.WindowShouldClose() {
+        rl.UpdateCamera(&camera, .THIRD_PERSON)
+
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
+
+        rl.ClearBackground(rl.WHITE)
+
+        rl.BeginMode3D(camera)
+        defer rl.EndMode3D()
+
+        for z in 0 ..< 4 do for y in 0 ..< 4 do for x in 0 ..< 4 {
+            tile := grid.cells[x][y][z].(Tile) or_continue
+            grade := u8(card(tile))
+
+            pos  := rl.Vector3{f32(x), f32(y), f32(z)} * CUBE_DISTANCE
+            size := rl.Vector3{ 1.0, 1.0, 1.0 }
+
+            b := (max(u8) / 6) * grade
+            r := max(u8) - b
+
+            color := rl.Color{ r, 0, b, 255}
+
+            rl.DrawCubeV( pos, size, color )
+
+            if .North  in tile do rl.DrawLine3D(pos, pos + {0,  CUBE_DISTANCE / 2, 0}, rl.BLACK)
+            if .South  in tile do rl.DrawLine3D(pos, pos + {0, -CUBE_DISTANCE / 2, 0}, rl.BLACK)
+            if .East   in tile do rl.DrawLine3D(pos, pos + { CUBE_DISTANCE / 2, 0, 0}, rl.BLACK)
+            if .West   in tile do rl.DrawLine3D(pos, pos + {-CUBE_DISTANCE / 2, 0, 0}, rl.BLACK)
+            if .Top    in tile do rl.DrawLine3D(pos, pos + {0, 0,  CUBE_DISTANCE / 2}, rl.BLACK)
+            if .Bottom in tile do rl.DrawLine3D(pos, pos + {0, 0, -CUBE_DISTANCE / 2}, rl.BLACK)
+        }
+    }
+}
+
+```
+
+![wired mesh of colors](third_test.png)
+
+This looks .. ok? half decent? Rotating it around does not show any mistakes. The centering is off, however. And due to the Orthographic projection and camera work I cannot zoom in to see how everything connects in more detail.
+
+### Faster Iteration of Visuals
+
+Also, frankly, I am getting tired of waiting for the solution to solve before the render show up, so I am changing the code a bit to, maybe, see the cube solve it in real time. This makes the solver *much* slower, but it makes for a fun animation.
+
+```odin
+SCREEN_WIDTH  :: 800
+SCREEN_HEIGHT :: 800
+
+CUBE_DISTANCE :: 3.0
+CENTER_POINT  :: 1.5 * CUBE_DISTANCE
+
+main :: proc () {
+
+    rl.InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "")
+    defer rl.CloseWindow()
+
+    rl.SetTargetFPS(60)
+
+    camera := rl.Camera3D {
+        position   = ({10.0, -5.0, 5.0} + CENTER_POINT),
+        target     = CENTER_POINT,
+        up         = {0.0, 1.0, 0.0},
+        fovy       = 30,
+        projection = .ORTHOGRAPHIC,
+    }
+
+    grid   := grid_init()
+    solved := false
+    paused := false
+
+    for !rl.WindowShouldClose() {
+        rl.UpdateCamera(&camera, .THIRD_PERSON)
+
+        if rl.IsKeyPressed(.SPACE) do paused ~= true
+
+        {    // Draw current state
+            rl.BeginDrawing()
+            defer rl.EndDrawing()
+    
+            rl.ClearBackground(rl.WHITE)
+    
+            rl.BeginMode3D(camera)
+            defer rl.EndMode3D()
+
+            for z in 0 ..< 4 do for y in 0 ..< 4 do for x in 0 ..< 4 {
+                tile := grid.cells[x][y][z].(Tile) or_continue
+                grade := u8(card(tile))
+    
+                pos  := rl.Vector3{f32(x), f32(y), f32(z)} * CUBE_DISTANCE
+                size := rl.Vector3{ 1.0, 1.0, 1.0 }
+    
+                b := (max(u8) / 6) * grade
+                r := max(u8) - b
+    
+                color := rl.Color{ r, 0, b, 255}
+    
+                rl.DrawCubeV( pos, size, color )
+    
+                if .North  in tile do rl.DrawLine3D(pos, pos + {0,  CUBE_DISTANCE / 2, 0}, rl.BLACK)
+                if .South  in tile do rl.DrawLine3D(pos, pos + {0, -CUBE_DISTANCE / 2, 0}, rl.BLACK)
+                if .East   in tile do rl.DrawLine3D(pos, pos + { CUBE_DISTANCE / 2, 0, 0}, rl.BLACK)
+                if .West   in tile do rl.DrawLine3D(pos, pos + {-CUBE_DISTANCE / 2, 0, 0}, rl.BLACK)
+                if .Top    in tile do rl.DrawLine3D(pos, pos + {0, 0,  CUBE_DISTANCE / 2}, rl.BLACK)
+                if .Bottom in tile do rl.DrawLine3D(pos, pos + {0, 0, -CUBE_DISTANCE / 2}, rl.BLACK)
+            }
+        }
+
+        if !paused && !solved {
+            if grid_controlled_demolition(&grid) {
+                solved = true
+                for z in 0..<4 do for y in 0..<4 do for x in 0..<4 {
+                    if card(grid.candidates[x][y][z]) != 1 {
+                        solved = false 
+                        break
+                    }
+                }
+            } else { 
+                grid = grid_init() 
+                solved = false
+            }
+        }
+    }
+}
+```
+
+<video controls width="400" autoplay="true">
+  <source src="animation_1.mp4" type="video/mp4" />
+</video>
+
+Well this is a lot more pleasant to look at, isn't it? One nicety: it pauses when the Space bar is pressed, easier to inspect the connections. It will find a solution in a million years, but until that happens it would be easier to iterate the presentation's colors and distances.
+
+Miracolously, howver, no matter when I pause it, the connections between adaject cubes are always correct. There are no cubes that are next to each other with one line hanging midways between them. Every high five is reciprocated. This is a fancy screenshot for an attempted solution.
+
+![organized mesh of colors](fourth_test.png)
+
+### Proper Camera Angle
+
+
