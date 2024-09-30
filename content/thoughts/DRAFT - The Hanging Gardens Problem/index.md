@@ -1,6 +1,6 @@
 +++
 title = "The Hanging Gardens Problem"
-description = "Exploring the Link between Shrödinger's Cat and Sudoku Solvers"
+description = "Exploring the link between Shrödinger's Cat and Sudoku"
 date = 2024-09-20 # temporary to appease Zola
 draft = true
 +++
@@ -223,7 +223,7 @@ grid_propagate :: proc (grid: ^Grid) -> bool {
         }
     }
 
-    any_collpased := false
+    any_collapsed := false
     
     // Update cells based on candidates
     for y in 0..<15 do for x in 0..<15 {
@@ -233,7 +233,7 @@ grid_propagate :: proc (grid: ^Grid) -> bool {
         // COLLAPSE
         // obviously only a new collapse if it is not collapsed already
         if grid.cells[x][y] == nil && card(cand) == 1 do for id in cand {
-            any_collpased = true
+            any_collapsed = true
 
             // What did actually collapse
             grid.cells[x][y] = Air{} if id == 0 else transmute(Tile)i8(id)
@@ -241,7 +241,7 @@ grid_propagate :: proc (grid: ^Grid) -> bool {
     }
 
     success := true
-    if any_collpased do success = grid_propagate(grid) // recursion!!
+    if any_collapsed do success = grid_propagate(grid) // recursion!!
 
     return success
 }
@@ -678,7 +678,7 @@ Grid :: struct {
 Candidate_Set :: [Side]Candidates
 
 grid_init :: proc () -> (ret: Grid) {
-    // Fille the candidate Grid
+    // Fill the candidate Grid
     ret.candidates = ~Candidates{ 0, 63 }
 
     // Place Blue and Red cubes respectively
@@ -755,7 +755,7 @@ Then edit `grid_init` to adjust the candidates in the edge cubes accordingly. Ho
 
 ```odin
 grid_init :: proc () -> (ret: Grid) {
-    // Fille the candidate Grid
+    // Fill the candidate Grid
     ret.candidates = ~Candidates{ 0, 63 }
     for z in 0..<4 do for y in 0..<4 do for x in 0..<4 {
         if x == 0 do ret.candidates[x][y][z] &= WEST_NOT_CONNECTED
@@ -806,7 +806,7 @@ grid_propagate :: proc (grid: ^Grid) -> bool {
         }
     }
 
-    any_collpased := false
+    any_collapsed := false
 
     // Update cells based on candidates
     for z in 0..<4 do for y in 0..<4 do for x in 0..<4  {
@@ -814,14 +814,14 @@ grid_propagate :: proc (grid: ^Grid) -> bool {
         if cand == {} do return false
 
         if grid.cells[x][y][z] == nil && card(cand) == 1 do for id in cand {
-            any_collpased = true
+            any_collapsed = true
 
             grid.cells[x][y][z] = transmute(Tile)u8(id)
         }
     }
 
     success := true
-    if any_collpased do success = grid_propagate(grid) // recursion!!
+    if any_collapsed do success = grid_propagate(grid) // recursion!!
 
     return success
 }
@@ -1242,87 +1242,87 @@ This is the final `grid_draw` and its resultant image
 
 ```odin
 grid_draw :: proc(grid: Grid) {
-	rl.SetConfigFlags({.WINDOW_HIDDEN})
-	rl.InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "")
-	defer rl.CloseWindow()
+    rl.SetConfigFlags({.WINDOW_HIDDEN})
+    rl.InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "")
+    defer rl.CloseWindow()
 
-	camera := rl.Camera3D {
-		position   = ({7, 7, -15} + CENTER_POINT),
-		target     = CENTER_POINT,
-		up         = {0.0, 0.0, 1.0},
-		fovy       = 35,
-		projection = .ORTHOGRAPHIC,
-	}
+    camera := rl.Camera3D {
+        position   = ({7, 7, -15} + CENTER_POINT),
+        target     = CENTER_POINT,
+        up         = {0.0, 0.0, 1.0},
+        fovy       = 35,
+        projection = .ORTHOGRAPHIC,
+    }
 
-	txtr := rl.LoadRenderTexture(SCREEN_WIDTH, SCREEN_HEIGHT)
+    txtr := rl.LoadRenderTexture(SCREEN_WIDTH, SCREEN_HEIGHT)
 
-	{	// Drawing here
-		rl.BeginTextureMode(txtr)
-		defer rl.EndTextureMode()
+    {    // Drawing here
+        rl.BeginTextureMode(txtr)
+        defer rl.EndTextureMode()
 
-		rl.BeginDrawing()
-		defer rl.EndDrawing()
+        rl.BeginDrawing()
+        defer rl.EndDrawing()
 
-		rl.ClearBackground(rl.Color{ 240, 240, 240, 255 })
+        rl.ClearBackground(rl.Color{ 240, 240, 240, 255 })
 
-		rl.BeginMode3D(camera)
-		defer rl.EndMode3D()
+        rl.BeginMode3D(camera)
+        defer rl.EndMode3D()
 
-		for z in 0 ..< 4 do for y in 0 ..< 4 do for x in 0 ..< 4 {
-			tile := grid.cells[x][y][z].(Tile) or_continue
-			grade := u8(card(tile))
+        for z in 0 ..< 4 do for y in 0 ..< 4 do for x in 0 ..< 4 {
+            tile := grid.cells[x][y][z].(Tile) or_continue
+            grade := u8(card(tile))
 
-			pos := rl.Vector3{
-				f32(x) * CUBE_DISTANCE_X,
-				f32(y) * CUBE_DISTANCE_Y,
-				f32(z) * CUBE_DISTANCE_Z
-			}
+            pos := rl.Vector3{
+                f32(x) * CUBE_DISTANCE_X,
+                f32(y) * CUBE_DISTANCE_Y,
+                f32(z) * CUBE_DISTANCE_Z
+            }
 
-			size := rl.Vector3{1.0, 1.0, 1.0}
+            size := rl.Vector3{1.0, 1.0, 1.0}
 
-			b := (max(u8) / 6) * grade
-			r := max(u8) - b
+            b := (max(u8) / 6) * grade
+            r := max(u8) - b
 
-			color := rl.Color{r, 0, b, 255}
+            color := rl.Color{r, 0, b, 255}
 
-			rl.DrawCubeV(pos, size, color)
-			rl.DrawCubeWiresV(pos, size, rl.BLACK)
+            rl.DrawCubeV(pos, size, color)
+            rl.DrawCubeWiresV(pos, size, rl.BLACK)
 
-			if .North in tile {
-				end_pos := pos + {0, CUBE_DISTANCE_Y / 2, 0}
-				rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.ORANGE)
-				rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
-			}
-			if .South in tile {
-				end_pos := pos + {0, -CUBE_DISTANCE_Y / 2, 0}
-				rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.ORANGE)
-				rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
-			}
-			if .East in tile {
-				end_pos := pos + {CUBE_DISTANCE_X / 2, 0, 0}
-				rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.DARKGREEN)
-				rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
-			}
-			if .West in tile {
-				end_pos := pos + {-CUBE_DISTANCE_X / 2, 0, 0}
-				rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.DARKGREEN)
-				rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
-			}
-			if .Top in tile {
-				end_pos := pos + {0, 0, CUBE_DISTANCE_Z / 2}
-				rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.YELLOW)
-				rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
-			}
-			if .Bottom in tile {
-				end_pos := pos + {0, 0, -CUBE_DISTANCE_Z / 2}
-				rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.YELLOW)
-				rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
-			}
-		}
-	}
+            if .North in tile {
+                end_pos := pos + {0, CUBE_DISTANCE_Y / 2, 0}
+                rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.ORANGE)
+                rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+            }
+            if .South in tile {
+                end_pos := pos + {0, -CUBE_DISTANCE_Y / 2, 0}
+                rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.ORANGE)
+                rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+            }
+            if .East in tile {
+                end_pos := pos + {CUBE_DISTANCE_X / 2, 0, 0}
+                rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.DARKGREEN)
+                rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+            }
+            if .West in tile {
+                end_pos := pos + {-CUBE_DISTANCE_X / 2, 0, 0}
+                rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.DARKGREEN)
+                rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+            }
+            if .Top in tile {
+                end_pos := pos + {0, 0, CUBE_DISTANCE_Z / 2}
+                rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.YELLOW)
+                rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+            }
+            if .Bottom in tile {
+                end_pos := pos + {0, 0, -CUBE_DISTANCE_Z / 2}
+                rl.DrawCylinderEx(pos, end_pos, 0.1, 0.1, 12, rl.YELLOW)
+                rl.DrawCylinderWiresEx(pos, end_pos, 0.1, 0.1, 12, rl.BLACK)
+            }
+        }
+    }
 
-	img := rl.LoadImageFromTexture(txtr.texture)
-	rl.ExportImage(img, "result.png")
+    img := rl.LoadImageFromTexture(txtr.texture)
+    rl.ExportImage(img, "result.png")
 }
 ```
 
@@ -1332,6 +1332,212 @@ grid_draw :: proc(grid: Grid) {
 
 ## Hanging Gardens
 
-With the Square Gardens and the Packed Gardens out of the way, time to return to the original problem. Much of the different pieces of the solution are already in place, and it is just a question of assembling them together.
+With the Square Gardens and the Packed Gardens done, time to return to the original problem. Much of the different pieces of the solution are already in place, and it is just a question of assembling them together.
 
+The main problem left is how to determine the proper size of the grid. It needs to be big enough to potentially accept any variation of the problem, but small enough that it does not cause a stack overflow. When I was experimenting with it, I tried a grid of size 31x31x31 and the Odin compiler warnned[^warning] me that it is so big it might cause said overflow. Or might just put it on the heap and let the OS take care of cleaning it from memory.
+
+[^warning]: `Declaration of 'grid' may cause a stack overflow due to its type 'Grid' having a size of 297912 bytes`
+
+This is the full program, with a helpful `GRID_SIZE` constant that allowed me to iterate and debug a bit with a smaller grid size. 
+
+```odin
+package hanging_gardens
+
+import "core:fmt"
+import "core:math/rand"
+
+GRID_SIZE :: 31
+MID_POINT :: (GRID_SIZE - 1) / 2
+
+Side :: enum u8 { North, East, South, West, Top, Bottom }
+Tile :: distinct bit_set[Side; u8]
+
+Air :: distinct struct {}
+
+Cell :: union { Air, Tile }
+Candidates :: distinct bit_set[0..<64; u64]
+
+Grid :: struct {
+    cells:      [GRID_SIZE][GRID_SIZE][GRID_SIZE]Cell,
+    candidates: [GRID_SIZE][GRID_SIZE][GRID_SIZE]Candidates,
+}
+
+Candidate_Set :: [Side]Candidates
+
+NORTH_CONNECTED  :: Candidates { 1,  3,  5,  7,  9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63 }
+EAST_CONNECTED   :: Candidates { 2,  3,  6,  7, 10, 11, 14, 15, 18, 19, 22, 23, 26, 27, 30, 31, 34, 35, 38, 39, 42, 43, 46, 47, 50, 51, 54, 55, 58, 59, 62, 63 }
+SOUTH_CONNECTED  :: Candidates { 4,  5,  6,  7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31, 36, 37, 38, 39, 44, 45, 46, 47, 52, 53, 54, 55, 60, 61, 62, 63 }
+WEST_CONNECTED   :: Candidates { 8,  9, 10, 11, 12, 13, 14, 15, 24, 25, 26, 27, 28, 29, 30, 31, 40, 41, 42, 43, 44, 45, 46, 47, 56, 57, 58, 59, 60, 61, 62, 63 }
+TOP_CONNECTED    :: Candidates {16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63 }
+BOTTOM_CONNECTED :: Candidates {32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63 }
+
+NORTH_NOT_CONNECTED  :: Candidates{ 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62 }
+EAST_NOT_CONNECTED   :: Candidates{ 0, 1, 4, 5, 8,  9, 12, 13, 16, 17, 20, 21, 24, 25, 28, 29, 32, 33, 36, 37, 40, 41, 44, 45, 48, 49, 52, 53, 56, 57, 60, 61 }
+SOUTH_NOT_CONNECTED  :: Candidates{ 0, 1, 2, 3, 8,  9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27, 32, 33, 34, 35, 40, 41, 42, 43, 48, 49, 50, 51, 56, 57, 58, 59 }
+WEST_NOT_CONNECTED   :: Candidates{ 0, 1, 2, 3, 4,  5,  6,  7, 16, 17, 18, 19, 20, 21, 22, 23, 32, 33, 34, 35, 36, 37, 38, 39, 48, 49, 50, 51, 52, 53, 54, 55 }
+TOP_NOT_CONNECTED    :: Candidates{ 0, 1, 2, 3, 4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47 }
+BOTTOM_NOT_CONNECTED :: Candidates{ 0, 1, 2, 3, 4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31 }
+
+tile_connections :: proc (c: Cell) -> (ret: Candidate_Set) {
+    switch t in c {
+    case Tile: 
+        ret[.North]  = SOUTH_CONNECTED  if .North  in t else {0}
+        ret[.East]   = WEST_CONNECTED   if .East   in t else {0}
+        ret[.South]  = NORTH_CONNECTED  if .South  in t else {0}
+        ret[.West]   = EAST_CONNECTED   if .West   in t else {0}
+        ret[.Top]    = BOTTOM_CONNECTED if .Top    in t else {0}
+        ret[.Bottom] = TOP_CONNECTED    if .Bottom in t else {0}
+    case Air:
+        ret[.North]  = SOUTH_NOT_CONNECTED
+        ret[.East]   = WEST_NOT_CONNECTED
+        ret[.South]  = NORTH_NOT_CONNECTED
+        ret[.West]   = EAST_NOT_CONNECTED
+        ret[.Top]    = BOTTOM_NOT_CONNECTED
+        ret[.Bottom] = TOP_NOT_CONNECTED
+    case: 
+        ret = ~{}
+    }
+    return
+}
+
+grid_propagate :: proc(grid: ^Grid) -> bool {
+    // Update candidates based on cells
+    for z in 0..<GRID_SIZE do for y in 0..<GRID_SIZE do for x in 0..<GRID_SIZE {
+        cell := grid.cells[x][y][z]
+        tc := tile_connections(cell)
+
+        // North
+        if y < GRID_SIZE - 1 do grid.candidates[x][y + 1][z] &= tc[.North]
+        // East
+        if x < GRID_SIZE - 1 do grid.candidates[x + 1][y][z] &= tc[.East]
+        // Top
+        if z < GRID_SIZE - 1 do grid.candidates[x][y][z + 1] &= tc[.Top]
+        // South
+        if y > 0 do grid.candidates[x][y - 1][z] &= tc[.South]
+        // West
+        if x > 0 do grid.candidates[x - 1][y][z] &= tc[.West]
+        // Bottom
+        if z > 0 do grid.candidates[x][y][z - 1] &= tc[.Bottom]
+
+        // if cell is a tile, make sure it is not a candidate anywhere else.
+        if tile, ok := cell.(Tile); ok {
+            cand := Candidates{ int ( transmute(u8)tile ) }
+
+            grid.candidates -= cand
+            grid.candidates[x][y][z] = cand
+        }
+    }
+
+    any_collapsed := false
+
+    // Update cells based on candidates
+    for z in 0..<GRID_SIZE do for y in 0..<GRID_SIZE do for x in 0..<GRID_SIZE {
+        cand := grid.candidates[x][y][z]
+        if cand == {} do return false // illegal state reached
+
+        // COLLAPSE
+        // obviously only a new collapse if it isnt collapsed already
+        if grid.cells[x][y][z] == nil && card(cand) == 1 do for id in cand {
+            any_collapsed = true
+
+            // What did actually collapse
+            grid.cells[x][y][z] = Air{} if id == 0 else transmute(Tile)i8(id)
+        }
+    }
+
+    success := true
+    if any_collapsed do success = grid_propagate(grid) 
+
+    return success
+}
+
+grid_init :: proc () -> (ret: Grid) {
+    ret.cells[MID_POINT][MID_POINT][MID_POINT] = ~Tile{}
+    ret.candidates = ~Candidates{} 
+
+    grid_propagate(&ret)
+
+    return 
+}
+
+
+grid_controlled_demolition :: proc(grid: ^Grid) -> bool {
+    
+    // all the shuffling 
+    rows := [GRID_SIZE]int{}
+    for i in 0..<GRID_SIZE do rows[i] = i
+    cols := rows
+    verts := cols
+
+    rand.shuffle(rows[:])
+    rand.shuffle(cols[:])
+    rand.shuffle(verts[:])
+
+    ids := []int{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63 }
+    rand.shuffle(ids)
+
+    // target collapse stored here
+    t_x: int
+    t_y: int
+    t_z: int
+
+    // tracking the minimum
+    min_card := max(int)
+
+    for z in verts do for y in cols do for x in rows {
+        c := card(grid.candidates[x][y][z])
+        (c > 1) or_continue // already collapsed
+
+        if c < min_card {
+            t_x = x
+            t_y = y
+            t_z = z
+            min_card = c
+        }
+
+        if min_card == 2 do break // no point in looking further in this case.
+    }
+
+    for id in ids do if id in grid.candidates[t_x][t_y][t_z] {
+        // COLLAPSE
+        if id == 0 {
+            grid.cells[t_x][t_y][t_z] = Air{}
+            grid.candidates[t_x][t_y][t_z] = {0}
+        } else {
+            tile := transmute(Tile)i8(id)
+            cand := Candidates{ id }
+
+            grid.cells[t_x][t_y][t_z] = tile
+            grid.candidates -= cand
+            grid.candidates[t_x][t_y][t_z] = cand
+        }
+
+        break
+    }
+
+    return grid_propagate(grid)
+}
+
+
+main :: proc () {
+    grid := new_clone(grid_init())
+
+    outer: for {
+        for grid_controlled_demolition(grid) {
+            if grid.candidates[0][0][0] == {0} do break outer
+        }
+
+        free(grid)
+        grid = new_clone(grid_init())
+    }
+
+
+    for z in 0..<GRID_SIZE do for y in 0..<GRID_SIZE do for x in 0..<GRID_SIZE {
+        fmt.println(x, y, z, grid.candidates[x][y][z])
+    }
+
+}
+```
+
+Running this takes *forever*, btw.
 
