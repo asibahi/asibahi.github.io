@@ -1338,6 +1338,8 @@ The main problem left is how to determine the proper size of the grid. It needs 
 
 [^warning]: `Declaration of 'grid' may cause a stack overflow due to its type 'Grid' having a size of 297912 bytes`
 
+### Frankenstein's Monster
+
 This is the full program, with a helpful `GRID_SIZE` constant that allowed me to iterate and debug a bit with a smaller grid size. 
 
 ```odin
@@ -1428,7 +1430,7 @@ grid_propagate :: proc(grid: ^Grid) -> bool {
         }
     }
 
-    any_collapsed := false
+    any_collapsed     := false
 
     // Update cells based on candidates
     for z in 0..<GRID_SIZE do for y in 0..<GRID_SIZE do for x in 0..<GRID_SIZE {
@@ -1438,7 +1440,7 @@ grid_propagate :: proc(grid: ^Grid) -> bool {
         // COLLAPSE
         // obviously only a new collapse if it isnt collapsed already
         if grid.cells[x][y][z] == nil && card(cand) == 1 do for id in cand {
-            any_collapsed = true
+            any_collapsed     = true
 
             // What did actually collapse
             grid.cells[x][y][z] = Air{} if id == 0 else transmute(Tile)i8(id)
@@ -1451,11 +1453,14 @@ grid_propagate :: proc(grid: ^Grid) -> bool {
     return success
 }
 
-grid_init :: proc () -> (ret: Grid) {
-    ret.cells[MID_POINT][MID_POINT][MID_POINT] = ~Tile{}
-    ret.candidates = ~Candidates{} 
+grid_init :: proc (grid: ^Grid) {
+    // different grid_init from before to reuse memory
+    grid.cells = {}
+    grid.cells[MID_POINT][MID_POINT][MID_POINT] = ~Tile{}
 
-    grid_propagate(&ret)
+    grid.candidates = ~Candidates{} 
+
+    grid_propagate(grid)
 
     return 
 }
@@ -1520,15 +1525,16 @@ grid_controlled_demolition :: proc(grid: ^Grid) -> bool {
 
 
 main :: proc () {
-    grid := new_clone(grid_init())
+    grid := new(Grid)
+    grid_init(grid)
 
-    outer: for {
+    outer: for i in 1 ..< max(int) {
         for grid_controlled_demolition(grid) {
             if grid.candidates[0][0][0] == {0} do break outer
         }
 
-        free(grid)
-        grid = new_clone(grid_init())
+        grid_init(grid)
+        if i % 10 == 0 do fmt.eprint("failed solution", i, "\r")
     }
 
 
@@ -1539,5 +1545,12 @@ main :: proc () {
 }
 ```
 
-Running this takes *forever*, btw.
+Running this takes *forever*, by the way. Even when compiling it optimized for speed with `odin build . -o:speed`, the first run at the solution took more than 290,000 iterations and more than 18 minutes before I gave up on it, and decided to change allocations a bit. Doubt rised in my heart whether this halts at all, or if it has a nasty bug that is difficult to find due to, well, the long runtime. Threading will probably *not* make this faster.
 
+TODO : update the text whether it halts or not once i leave the laptop overnight.
+
+### Backtracking
+
+Maybe, just maybe, completely random attempts are the wrong approach. Maybe I actually need to implement proper backtracking.
+
+TODO : Do backtracking. Maybe frame it as "while the code was running on the first attempt I did a version of it with backtracking.
