@@ -291,8 +291,7 @@ grid_controlled_demolition :: proc (grid: ^Grid) -> bool {
     rand.shuffle(ids)
 
     // target collapse stored here
-    t_x : int 
-    t_y : int 
+    t_x, t_y: int
 
     // tracking the minimum
     min_card := 15
@@ -845,9 +844,7 @@ grid_controlled_demolition :: proc (grid: ^Grid) -> bool {
                  48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63}
     rand.shuffle(ids)
 
-    t_x: int 
-    t_y: int 
-    t_z: int
+    t_x, t_y, t_z: int
 
     min_card := max(int)
 
@@ -1482,9 +1479,7 @@ grid_controlled_demolition :: proc(grid: ^Grid) -> bool {
     rand.shuffle(ids)
 
     // target collapse stored here
-    t_x: int
-    t_y: int
-    t_z: int
+    t_x, t_y, t_z: int
 
     // tracking the minimum
     min_card := max(int)
@@ -1547,10 +1542,170 @@ main :: proc () {
 
 Running this takes *forever*, by the way. Even when compiling it optimized for speed with `odin build . -o:speed`, the first run at the solution took more than 290,000 iterations and more than 18 minutes before I gave up on it, and decided to change allocations a bit. Doubt rised in my heart whether this halts at all, or if it has a nasty bug that is difficult to find due to, well, the long runtime. Threading will probably *not* make this faster.
 
-TODO : update the text whether it halts or not once i leave the laptop overnight.
+The longest time I ran it, it went for 25,771,590 iterations and around 27 hours of usertime before I shut it off.
 
-### Backtracking
+Maybe, just maybe, completely random attempts are the wrong approach. Maybe I actually need to implement proper backtracking to ensure that the same tree is not being barked multiple times.
 
-Maybe, just maybe, completely random attempts are the wrong approach. Maybe I actually need to implement proper backtracking.
+I have spent a few days mulling it over, and the simplest way to implement is to have a dynamic array in `Grid` to save every state where an arbitrary (*not* random) choice was made, in addition to the *index* of the choice. And whenever reaching an illegal state, the grid is reset to the previous state, and the index is incremented. Should the index reach a certain value (10 or whatever), then the last state is discarded and the index is incremented on the one before it.
 
-TODO : Do backtracking. Maybe frame it as "while the code was running on the first attempt I did a version of it with backtracking.
+### Grid Enhancements
+
+So, first things first, here is the new `Grid` struct, with a few type aliases to lighten the mood.
+
+```odin
+Cell_Grid      :: [GRID_SIZE][GRID_SIZE][GRID_SIZE]Cell
+Candidate_Grid :: [GRID_SIZE][GRID_SIZE][GRID_SIZE]Candidates
+
+Demolition_Point :: struct {
+    grid: Cell_Grid,
+    idx:  int,
+}
+
+Grid :: struct {
+    cells:       Cell_Grid,
+    candidates:  Candidate_Grid,
+    demolitions: [dynamic]Demolition_Point
+}
+```
+
+Having the dynamic array there should, in theory, be safe. The Grid is initialized once, And whenever the controlled demolition fails, the index of the last item in `demolitions` is updated. *Or*, if it exceeds some threshold (preferably exhausting all the candidates in a cell), the last entry is removed and the second to last entry increments its index instead.
+
+Now, for the procedures used, `grid_propagate` should probably be the same. While `grid_init` and `grid_controlled_demolition` should perhaps be overhauled.
+
+A potential enhancement, to avoid the algorithm being stuck on the same start every time, is to reuse the shuffling above in initialization. Shuffling the IDs for every new `Demolition_Point` would be enough, unlike shuffling rows and columns. the reason for that is, if the program exhausted every candidate from a cell, then there is no point in trying other cells from the same state. This is what that would look like.
+
+```odin
+Demolition_Point :: struct {
+    grid:        Cell_Grid,
+    idx:         int,
+    ids_shuffle: [64]int
+}
+
+// ...
+
+grid_init :: proc (grid: ^Grid) {
+    grid.cells[MID_POINT][MID_POINT][MID_POINT] = ~Tile{}
+    grid.candidates = ~Candidates{} 
+
+    grid_propagate(grid)
+
+    start_point := Demolition_Point {
+        grid = grid.cells,
+        idx = 0,
+        ids_shuffle = IDS, // IDS is numbers from 0 to 63.
+    }
+
+    rand.shuffle(start_point.ids_shuffle[:])
+
+    append(&grid.demolitions, start_point)
+
+    return 
+}
+```
+
+### Demolitoon Revision
+
+Previously, `grid_init` was used to reset the state after every failed attempt. This time a different procedure is needed, which may be called `grid_backtrack`, or `increment`, who knows. This proc would only be called for a *failed* controlled demolition. Demolition can fail for two reasons: either the candidate chosen forced an illegal state, or all candidates from the lowest cell were exhausted. This call for an `enum`! `grid_controlled_demolition` can return this enum and based on whivh `grid_backtrack` decides what to do.
+
+```odin
+Demolition_Result :: enum { Success, Exhausted_Candidates, Illegal_State }
+```
+
+And this would be the new version of `grid_controlled_demolition`, with less shuffling and small changes:
+
+```odin
+grid_controlled_demolition :: proc(grid: ^Grid) -> Demolition_Result {
+
+    t_x, t_y, t_z: int
+    min_card := max(int)
+
+    for z in RANKS do for y in RANKS do for x in RANKS { // RANKS is numbers 0 to 30
+        c := card(grid.candidates[x][y][z])
+        (c > 1) or_continue 
+
+        if c < min_card {
+            t_x = x
+            t_y = y
+            t_z = z
+            min_card = c
+        }
+
+        if min_card == 2 do break 
+    }
+
+    demo_pt := grid.demolitions[len(grid.demolitions) - 1] // should never be empty
+
+    counter := 0
+    exhausted := true 
+
+    for id in demo_pt.ids_shuffle do if id in grid.candidates[t_x][t_y][t_z] {
+        if counter < demo_pt.idx {
+            // Skip till idx is reached.
+            counter += 1
+            continue
+        }
+
+        // COLLAPSE
+        if id == 0 {
+            grid.cells[t_x][t_y][t_z] = Air{}
+            grid.candidates[t_x][t_y][t_z] = {0}
+        } else {
+            tile := transmute(Tile)i8(id)
+            cand := Candidates{ id }
+
+            grid.cells[t_x][t_y][t_z] = tile
+            grid.candidates -= cand
+            grid.candidates[t_x][t_y][t_z] = cand
+        }
+
+        exhausted = false
+        break
+    }
+
+    // Here is the interesting part.
+    if exhausted do return .Exhausted_Candidates
+    
+    ok := grid_propagate(grid)
+    return .Success if ok else .Illegal_State
+}
+```
+
+### The Main Loop
+
+Before figuring out how the supposed `grid_backtrack` looks like, it might help to construct how the loop looks. With a side of Odin flavoured golf:
+
+```odin
+main :: proc () {
+    grid := new(Grid)
+    grid_init(grid)
+
+    // inner tag is only for readability
+    outer: for i in 1 ..< max(int) do inner: for {
+        result := grid_controlled_demolition(grid)
+        switch result {
+        case .Success:
+            if grid.candidates[0][0][0] == {0} do break outer
+
+            demo_pt := Demolition_Point {
+                grid = grid.cells,
+                idx = 0,
+                ids_shuffle = IDS
+            }
+            rand.shuffle(demo_pt.ids_shuffle[:])
+
+            append(&grid.demolitions, demo_pt)
+
+        case .Exhausted_Candidates, .Illegal_State:
+            grid_backtrack(grid, result)
+            if i % 10 == 0 do fmt.eprint("try", i, "\r") // debug land
+            break inner
+        }
+    }
+
+    grid_draw(grid) // <-- later
+}
+```
+
+### The Step Back
+
+
