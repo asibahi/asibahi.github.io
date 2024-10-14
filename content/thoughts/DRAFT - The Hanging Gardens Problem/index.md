@@ -1741,6 +1741,39 @@ I fixed that by adding a line just before the call to `grid_propagate` in `grid_
 
 Ok, not segfaulting. Good news. The peppered around `fmt.eprint`s show behaviour that make sense.
 
-Also, similarly to the reset the world behaviour experimented with at first, this is still taking a long time to run, with no idea whether it halts or not. Building it with `-o:speed` as done before, and running it overnight might give the needed answer. And I woke up to this (after 503420 attempts, in 8 hours, 40 minutes runtime. )
+Also, similarly to the reset the world behaviour experimented with at first, this is still taking a long time to run, with no idea whether it halts or not. Building it with `-o:speed` as done before, and running it overnight might give the needed answer. And I woke up to this (after 503420 attempts, in 8 hours, 40 minutes runtime.)
 
 ![Uses 30GB of memory](out_of_memory.png)
+
+Which is all sorts of miraculous because my computer only has 8GB of memory.[^virtual] That aside, one can probably guess what's causing this inflation of memory. The `Cell_Grid` matrix is big, and `demolitions` is storing a potentially infinite numbers of them. There could also be a logic error somewhere, but I cannot find one currently and I do not want to attach a debugger, or a visualizer, yet.
+
+[^virtual]: Yes I know there is a thing called virtual memory.
+
+Unfortunately, storing the state at a random choice interval is integral to backtracking, or there would be nothing to backtrack to. However, `Demolition_Point` can be made a tiny bit smaller: remove `ids` shuffling. This would make the alogirthm only find the first solution, instead of finding a random solution, but the goal right now is to .. well .. actually terminate the program eventually.
+
+The other "easy" way to get memory is to shrink the grid size. a 31x31x31 Grid is huge. A smaller grid (say 15x15x15) would constrain the problem space, and would require handling for candidates at the edges. However, it is much, much lighter on memory footprint.
+
+I will first try the first idea, and keep the computer running to see what happens. The code change is extremely minimal, so I will not bother with it here.
+
+### Logic Error
+
+Well that went swimmingly. It terminated in 9 seconds! Zero failure states too. Wait .. what?
+
+Looking over the output, I realized what happened. Because `Air` is the first ID being tested, and it because every `Air` can connect to `Air`, it just quickly fills up the grid with `Air` tiles. The resultant grid was just the Blue Cube `63` in the middle, with the six single connections connected to it, and .. that's it.
+
+```text
+// everything else is Candidates{0}
+13953   15 15 14 Candidates{16}
+14865   15 14 15 Candidates{1}
+14895   14 15 15 Candidates{2}
+14896   15 15 15 Candidates{63}
+14897   16 15 15 Candidates{8}
+14927   15 16 15 Candidates{4}
+15857   15 15 16 Candidates{32}
+```
+
+I put `0` at the end of `IDS` just to see how it would go, and it reached the same memory usage as before. 
+
+Obviously, the fix here, without shuffling, is to "optimize" the iteration order. Iterating over the Grid should not start from `0, 0, 0`, but from the middle. Iterating over candidates should not begin from `0`, but from `63`, which has 6 connections, and iterate down from there.
+
+One last thing, looking over the output file, it has 29791 lines. One for each cell. That's a *lot* of cells. Maybe I should proceed with shrinking the problem space too.
