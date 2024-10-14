@@ -1708,4 +1708,39 @@ main :: proc () {
 
 ### The Step Back
 
+For backtracking, what is done depends on the error returned. If it is an illegal state, just increment the index and restart. If it is exhausted candidates, remove the last state, then increment the index of the previous one. This is the initial idea:
 
+```odin
+grid_backtrack :: proc (grid: ^Grid, result: Result) {
+    switch result {
+    case .Success: 
+        unreachable()
+    case .Exhausted_Candidates:
+        pop(&grid.demolitions)
+    case .Illegal_State:
+        // nothing
+    }
+
+    last := slice.last_ptr(grid.demolitions[:])
+    last.idx += 1
+
+    grid.cells = last.grid
+    grid_propagate(grid)
+}
+```
+
+Unfortunately, putting all these together and running it, quickly hits a segfault. I could not figure out why at first, but then peppering a few `fmt.eprint` around, I realized that the state of `grid.candidates` wasn't being reset properly between iterations. So any changes made to it in `grid_propagate` would persist.
+
+I fixed that by adding a line just before the call to `grid_propagate` in `grid_backtrack`:
+```odin
+    grid.cells = last.grid
+    grid.candidates = ~Candidates{} // <-- this one
+
+    grid_propagate(grid)
+```
+
+Ok, not segfaulting. Good news. The peppered around `fmt.eprint`s show behaviour that make sense.
+
+Also, similarly to the reset the world behaviour experimented with at first, this is still taking a long time to run, with no idea whether it halts or not. Building it with `-o:speed` as done before, and running it overnight might give the needed answer. And I woke up to this (after 503420 attempts, in 8 hours, 40 minutes runtime. )
+
+![Uses 30GB of memory](out_of_memory.png)
