@@ -1760,7 +1760,7 @@ I tried different variations of the main loop, including inlining `grid_backtrac
 
 ## Giving Up and Lessons Learned
 
-To be honest, it has been almost two months since I started this article, and I am tired of iterating on the problem. [Frankenstein's Monster](#frankensteins-monster) works in theory, given infintie time, and for now this is enough for me. Maybe one day I will go back to figuring how to get to a slution in human time.
+To be honest, it has been almost two months since I started this article, and I am tired of iterating on the problem. [Frankenstein's Monster](#frankenstein-s-monster) works in theory, given infintie time, and for now this is enough for me. Maybe one day I will go back to figuring how to get to a slution in human time.
 
 The part I enjoyed the most was iterating on the graphics with `raylib`. The library is really easy to use, if not as flexible as I hoped. Maybe for the next project I will do some sort of game, or just use it as generative art.
 
