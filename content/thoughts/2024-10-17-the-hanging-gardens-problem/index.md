@@ -40,6 +40,8 @@ There is most likely is a solution.
 
 The solution does not have to be one big shape. It actually *cannot*, because of the Red Cube.
 
+> **tl;dr** I gave up on the problem due to time and memory constraints. However, while I was at it, I found solutions to two, equally interesting, sub problems, and nice graphics.
+
 ## Wave Function Collapse
 
 I asked around in a number of Discord servers on how to approach solving the problem programmatically, outside of 3-D printing the set and physically assembling it by hand. The [Gorilla Sun](https://www.gorillasun.de) Creative Coding server suggested that using the [Wave Function Collapse](https://github.com/mxgmn/WaveFunctionCollapse) algorithm might be the best fit for the problem, and suggested [a very excellent Youtube video from the Coding Train](https://www.youtube.com/watch?v=rI_y2GAlQFM) implementing the algorithm in Javascript. It is a *very* good video that I suggest watching.
@@ -60,8 +62,6 @@ So, how does one solve a Sudoku?
 [^3]: This might sound heretical in Sudoku, but in well constructed Sudoku puzzles there is always at least one cell with exactly one candidate in any given puzzle state thought solving. If ever there are not any, either it is not a well constructed puzzle, or the solver is unaware of the Ring of Phistomefel.
 
 This approach can work just fine for the Hanging Gardens. The Tile set and the connection rules are clearly defined. It is only a matter of putting it into code and .. running it. The problem most apparent to me, however, is that the search space is potentially *huge*. So, I first need to try this approach with a smaller problem set.
-
-**tl;dr**: I gave up on the problem due to time and memory constraints. However, while I was at it, I found solutions to two, equally interesting, sub problems, and nice graphics.
 
 ---
 
@@ -1764,4 +1764,4 @@ To be honest, it has been almost two months since I started this article, and I 
 
 The part I enjoyed the most was iterating on the graphics with `raylib`. The library is really easy to use, if not as flexible as I hoped. Maybe for the next project I will do some sort of game, or just use it as generative art.
 
-I should watch more coding train videos.
+I should watch more Coding Train videos.
