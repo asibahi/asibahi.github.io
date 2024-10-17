@@ -1,8 +1,7 @@
 +++
 title = "The Hanging Gardens Problem"
 description = "Exploring the link between Shrödinger's Cat and Sudoku"
-date = 2024-09-20 # temporary to appease Zola
-draft = true
+date = 2024-10-17 
 +++
 
 This is an interesting puzzle inspired by Christian Freeling's tile set [The China Cube](https://mindsports.nl/index.php/puzzles/3d/394-the-china-cube). As it really has nothing to do with China, I call it **the Hanging Gardens Problem**. Imagine each cube as a section of the Garden, and connections to other cubes are paths and stairways.[^1]
@@ -61,6 +60,8 @@ So, how does one solve a Sudoku?
 [^3]: This might sound heretical in Sudoku, but in well constructed Sudoku puzzles there is always at least one cell with exactly one candidate in any given puzzle state thought solving. If ever there are not any, either it is not a well constructed puzzle, or the solver is unaware of the Ring of Phistomefel.
 
 This approach can work just fine for the Hanging Gardens. The Tile set and the connection rules are clearly defined. It is only a matter of putting it into code and .. running it. The problem most apparent to me, however, is that the search space is potentially *huge*. So, I first need to try this approach with a smaller problem set.
+
+**tl;dr**: I gave up on the problem due to time and memory constraints. However, while I was at it, I found solutions to two, equally interesting, sub problems, and nice graphics.
 
 ---
 
@@ -1333,7 +1334,7 @@ With the Square Gardens and the Packed Gardens done, time to return to the origi
 
 The main problem left is how to determine the proper size of the grid. It needs to be big enough to potentially accept any variation of the problem, but small enough that it does not cause a stack overflow. When I was experimenting with it, I tried a grid of size 31x31x31 and the Odin compiler warnned[^warning] me that it is so big it might cause said overflow. Or might just put it on the heap and let the OS take care of cleaning it from memory.
 
-[^warning]: `Declaration of 'grid' may cause a stack overflow due to its type 'Grid' having a size of 297912 bytes`
+[^warning]: "`Declaration of 'grid' may cause a stack overflow due to its type 'Grid' having a size of 297912 bytes`"
 
 ### Frankenstein's Monster
 
@@ -1427,7 +1428,7 @@ grid_propagate :: proc(grid: ^Grid) -> bool {
         }
     }
 
-    any_collapsed     := false
+    any_collapsed := false
 
     // Update cells based on candidates
     for z in 0..<GRID_SIZE do for y in 0..<GRID_SIZE do for x in 0..<GRID_SIZE {
@@ -1437,7 +1438,7 @@ grid_propagate :: proc(grid: ^Grid) -> bool {
         // COLLAPSE
         // obviously only a new collapse if it isnt collapsed already
         if grid.cells[x][y][z] == nil && card(cand) == 1 do for id in cand {
-            any_collapsed     = true
+            any_collapsed = true
 
             // What did actually collapse
             grid.cells[x][y][z] = Air{} if id == 0 else transmute(Tile)i8(id)
@@ -1529,7 +1530,7 @@ main :: proc () {
         }
 
         grid_init(grid)
-        if i % 10 == 0 do fmt.eprint("failed solution", i, "\r")
+        if i % 10 == 0 do fmt.eprint("try", i, "\r")
     }
 
 
@@ -1603,7 +1604,7 @@ grid_init :: proc (grid: ^Grid) {
 }
 ```
 
-### Demolitoon Revision
+### Demolition Revision
 
 Previously, `grid_init` was used to reset the state after every failed attempt. This time a different procedure is needed, which may be called `grid_backtrack`, or `increment`, who knows. This proc would only be called for a *failed* controlled demolition. Demolition can fail for two reasons: either the candidate chosen forced an illegal state, or all candidates from the lowest cell were exhausted. This call for an `enum`! `grid_controlled_demolition` can return this enum and based on whivh `grid_backtrack` decides what to do.
 
@@ -1741,39 +1742,26 @@ I fixed that by adding a line just before the call to `grid_propagate` in `grid_
 
 Ok, not segfaulting. Good news. The peppered around `fmt.eprint`s show behaviour that make sense.
 
-Also, similarly to the reset the world behaviour experimented with at first, this is still taking a long time to run, with no idea whether it halts or not. Building it with `-o:speed` as done before, and running it overnight might give the needed answer. And I woke up to this (after 503420 attempts, in 8 hours, 40 minutes runtime.)
+Also, similarly to the reset the world behaviour experimented with at first, this is still taking a long time to run, with no idea whether it halts or not. Building it with `-o:speed` as done before, and running it overnight might give the needed answer.
+
+### Out of Memory
+
+I woke up to this:
 
 ![Uses 30GB of memory](out_of_memory.png)
 
-Which is all sorts of miraculous because my computer only has 8GB of memory.[^virtual] That aside, one can probably guess what's causing this inflation of memory. The `Cell_Grid` matrix is big, and `demolitions` is storing a potentially infinite numbers of them. There could also be a logic error somewhere, but I cannot find one currently and I do not want to attach a debugger, or a visualizer, yet.
+I spent a few days trying different things out and seeing what is causing the ballooning in memory. For whatever reason, the program seemed to be allocating a lot more memory than I expected, and the dynamic array of `demolitions` is ballooning uncontrollably. In theory, there would be 31x31x31 successful demolitions at most. I tested this by using Odin's core library's `Small_Array`, which is a "dynamic" array with a fixed capacity, giving it 31x31x31 size, and it quickly filled up and panicked as it attempted appending to a full array. This indicates, to me, a logic error somewhere.
 
-[^virtual]: Yes I know there is a thing called virtual memory.
+I tried different variations of the main loop, including inlining `grid_backtrack`. I removed the ID shuffling per `Demolition_Point`. I made the `Grid` smaller. I tried not shuffling `IDS`. All of them either ran into the same memory issue or just .. kept running.[^exception] I am at a complete loss of what the issue might be. Clearly this approach to backtracking is not working. I am honestly out of spoons thinking about this.
 
-Unfortunately, storing the state at a random choice interval is integral to backtracking, or there would be nothing to backtrack to. However, `Demolition_Point` can be made a tiny bit smaller: remove `ids` shuffling. This would make the alogirthm only find the first solution, instead of finding a random solution, but the goal right now is to .. well .. actually terminate the program eventually.
+[^exception]: There was one exception where it terminated in 9 seconds. I realized that `0` being the first ID it always tests makes it fill everything with `Air` tiles.
 
-The other "easy" way to get memory is to shrink the grid size. a 31x31x31 Grid is huge. A smaller grid (say 15x15x15) would constrain the problem space, and would require handling for candidates at the edges. However, it is much, much lighter on memory footprint.
+---
 
-I will first try the first idea, and keep the computer running to see what happens. The code change is extremely minimal, so I will not bother with it here.
+## Giving Up and Lessons Learned
 
-### Logic Error
+To be honest, it has been almost two months since I started this article, and I am tired of iterating on the problem. [Frankenstein's Monster](#frankensteins-monster) works in theory, given infintie time, and for now this is enough for me. Maybe one day I will go back to figuring how to get to a slution in human time.
 
-Well that went swimmingly. It terminated in 9 seconds! Zero failure states too. Wait .. what?
+The part I enjoyed the most was iterating on the graphics with `raylib`. The library is really easy to use, if not as flexible as I hoped. Maybe for the next project I will do some sort of game, or just use it as generative art.
 
-Looking over the output, I realized what happened. Because `Air` is the first ID being tested, and it because every `Air` can connect to `Air`, it just quickly fills up the grid with `Air` tiles. The resultant grid was just the Blue Cube `63` in the middle, with the six single connections connected to it, and .. that's it.
-
-```text
-// everything else is Candidates{0}
-13953   15 15 14 Candidates{16}
-14865   15 14 15 Candidates{1}
-14895   14 15 15 Candidates{2}
-14896   15 15 15 Candidates{63}
-14897   16 15 15 Candidates{8}
-14927   15 16 15 Candidates{4}
-15857   15 15 16 Candidates{32}
-```
-
-I put `0` at the end of `IDS` just to see how it would go, and it reached the same memory usage as before. 
-
-Obviously, the fix here, without shuffling, is to "optimize" the iteration order. Iterating over the Grid should not start from `0, 0, 0`, but from the middle. Iterating over candidates should not begin from `0`, but from `63`, which has 6 connections, and iterate down from there.
-
-One last thing, looking over the output file, it has 29791 lines. One for each cell. That's a *lot* of cells. Maybe I should proceed with shrinking the problem space too.
+I should watch more coding train videos.
