@@ -1,28 +1,26 @@
 +++
 title = "Parsing Hearthstone Deck Codes"
-description = "Parser fight"
-date = 2024-11-12 
-draft = true
+date = 2024-11-14
 +++
 
 In the last few days I have been mucking around with [`Mimiron`](@/projects/Mimiron%20Discord%20Bot.md), my Hearthstone API library and Discord bot. One of the main functions of the bot, and the one it is used for the most, is parsing Hearhstone deck codes and presenting them in a pretty fashion.
 
-I had a working parser for a while, but I wanted to experiment with it so I decided to rewrite it in [nom](https://docs.rs/nom/latest/nom/). Then I thought to myself, it is a simple thing. Why not try doing it in different parser libraries to see how they compare.
+I had a working parser for a while, but I wanted to experiment with it so I decided to rewrite it in [nom](https://docs.rs/nom/latest/nom/). Here are both parsers.
 
 ## Deck Code Format
 
-The deck code fromat is explained [by HearthSim](https://hearthsim.info/docs/deckstrings/), the company behind [HSReplay](https://hsreplay.net) As far as I know, there is no official specification of deck codes encoding, so HearthSim's description is what everyone relies on. The page is actually outdated, but their example implementations (in C# and Python) explain it clearly enough.
+The deck code fromat is explained [by HearthSim](https://hearthsim.info/docs/deckstrings/), the company behind [HSReplay](https://hsreplay.net) As far as I know, there is no official specification of deck codes encoding, so HearthSim's description is what everyone relies on. The page is actually outdated, but their example implementations (in [C#](https://github.com/HearthSim/HearthDb/blob/5258360a9c0411334e4f5a6dcb876b085d89cd3a/HearthDb/Deckstrings/DeckSerializer.cs#L169)m [Python](https://github.com/HearthSim/python-hearthstone/blob/82e7c71ebdb6c8521b168d6f0ca418ff56e0fd5d/hearthstone/deckstrings.py#L109)m and [TypeScript](https://github.com/HearthSim/hearthstone-deckstrings/blob/6fa4d9cb896841a6246130a59b52a7cf752ca69f/src/index.ts#L123)) explain it clearly enough.
 
-- The deco code is essentially a `base64` encoded series of integers.
+- The deck code is essentially a `base64` encoded series of integers.
 - These integers are encoded as unsigned `varint`s, [variable width integers](https://en.wikipedia.org/wiki/Variable-length_quantity)[^wikipedia].
-- The first two integers are always `0` and `1`. They happen to be a byte each to cimplify matters.
+- The first two integers are always `0` and `1`. They happen to be a byte each, simplifying matters.
 - The third integer is the Format. `1` is Wild, `2` is Standard, `3` is Classic, and `4` is Twist.
 
 [^wikipedia]: This Wikipedia page gives a terrible and obtuse explanation. The implementation turned out to very simple.
 
-After the Format, every block of integers starts with a count, then a listing of items, usually Card IDs (called DBF IDs often). Card IDs are unique numerical IDs that uniquely[^cardid] identify each card in the game. The blocks are as follows:
+After `Format`, every block of integers starts with a count, then a listing of items, usually Card IDs (often called DBF IDs). Card IDs are unique numerical IDs that uniquely[^cardid] identify each card in the game. The blocks are as follows:
 
-[^cardid]: IDs can be deleted from the game, leading to outdated deck codes out there, but that's out of scope of this article. In `Mimiron` I work around that by looking them up in the third party database everyone else uses: [HearthSim's](https://hearthstonejson.com). My bot is somewhat unique for using [Blizzard's official API](https://develop.battle.net/documentation) for the most part.
+[^cardid]: IDs can be deleted from the game, leading to outdated deck codes out there, but that's out of scope of this article. In `Mimiron`, I work around that by looking them up in the third party database everyone else uses: [HearthSim's](https://hearthstonejson.com), and "canonilizing" the IDs. My bot is somewhat unique for relying first on [Blizzard's official API](https://develop.battle.net/documentation).
 
 1. Hero. Conveniently, this block only ever has one element.
 2. Single-copy cards.
@@ -70,7 +68,7 @@ This is the list of numbers it represents, with comments.
 110872
 111972
 113677
-0       # N-Copy IDs
+0       # N-Copy IDs. This is only used in weird formats.
 1       # no idea really
 3       # Sideboard IDs
 104949
@@ -79,7 +77,7 @@ This is the list of numbers it represents, with comments.
 102983  # The Sideboard Card
 110440
 102983
-0
+0       # who knows? Future proofing maybe?
 0
 ```
 
@@ -157,7 +155,7 @@ fn main() {
         print_nums(&decoded);
     } else {
         if print_data(&decoded).is_err() {
-            eprintln!("nvalid Deck Code");
+            eprintln!("Invalid Deck Code");
             std::process::exit(1);
         }
     }
@@ -169,7 +167,7 @@ fn print_nums(decoded: &[u8]) {
 }
 
 // Print the Raw Data obejct.
-fn print_data(decoded: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+fn print_data(decoded: &[u8]) -> Result<(), Box<dyn Error>> {
     todo!()
 }
 ```
@@ -206,7 +204,7 @@ Excellent. This means that `integer_encoding` does its job splendidly.
 The second one is a bit more involved, but also fairly straightforward. `read_varint` advances the `Cursor`, so all that is needed is to assign the values in the correct order. There is a small footgun hiding in the API, however, which is that unsigned `varint`s have a different encoding for signed `varint`s. Considering literals are, by default, `i32`, Rust's type inference works against you here.
 
 ```rust
-fn print_data(decoded: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+fn print_data(decoded: &[u8]) -> Result<(), Box<dyn Error>> {
     let mut buffer = Cursor::new(&decoded);
 
     // Format is the third number.
@@ -250,7 +248,6 @@ fn print_data(decoded: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Sideboard cards. Are they always available?
-
     let mut sideboard_cards = Vec::new();
     if buffer.read_varint::<usize>().is_ok_and(|i| i == 1) {
         let count = buffer.read_varint()?;
@@ -285,7 +282,8 @@ Unsigned `varint`s' encoding is, as it turned out, fairly simple. Honestly it is
 
 ```rust
 fn parse_varint(input: &[u8]) -> Option<usize> {
-    const MAX_BYTES: usize = 9; // a usize can only be as big as 9 bytes in varint encoding
+    // a usize can only be as big as 9 bytes in varint encoding
+    const MAX_BYTES: usize = 9;
 
     let mut num = 0;
 
@@ -326,13 +324,14 @@ use nom::{
     combinator::{
         cond,      // calls a parser only if a condition is met
         map,       // maps the result of a parser
-        map_opt,   // maps the result of a parser with a function that returns Option
+        map_opt,   // maps the result of a parser to an Option
         opt,       // optional parser, for a value. returns Option
-        verify,    // verifies the result of the parser satisfies a condition
+        verify,    // verifies the result satisfies a condition
     },
     multi::{
-        length_count, // gets a number from first parser, then applies second parser that many times
-        many0,        // repeats a parser until it fails, returns result in a Vec.
+        length_count, // gets a number from first parser,
+                      // then applies second parser that many times
+        many0,        // repeats a parser until it fails. returns Vec
     },
     sequence::{
         pair,       // call first parser, then second parser.
@@ -341,8 +340,8 @@ use nom::{
     },
 
     IResult,        // nom's Result type.
-                    // Returns the remaining input and the successful parser results
-                    // or returns with an error with the input inside the Error.
+                    // Returns remaining input and successful results
+                    // or an error with the input inside the Error.
 };
 
 fn parse_varint(input: &[u8]) -> IResult<&[u8], usize> {
@@ -401,9 +400,12 @@ pub fn print_nums(decoded: &[u8]) {
 The second function is a bit more involved, but it generally follows the structure of the previous section's solution. I think it is easy enough to follow.
 
 ```rust
-pub fn print_data(decoded: &[u8]) -> Result<(), Box<dyn std::error::Error + '_>> {
+pub fn print_data(decoded: &[u8]) -> Result<(), Box<dyn Error + '_>> {
     // starting from 2 as Format is the third number.
-    let (rem, format) = map(parse_varint, |f| f.try_into().unwrap_or_default())(&decoded[2..])?;
+    let (rem, format) = map(
+        parse_varint,
+        |f| f.try_into().unwrap_or_default()
+    )(&decoded[2..])?;
 
     // skip 1 byte for Hero ID.
     let (rem, _) = parse_varint(rem)?;
@@ -419,7 +421,10 @@ pub fn print_data(decoded: &[u8]) -> Result<(), Box<dyn std::error::Error + '_>>
             // n-count cards
             length_count(
                 parse_varint,
-                map(pair(parse_varint, parse_varint), |(id, n)| [id].repeat(n)),
+                map(
+                    pair(parse_varint, parse_varint), 
+                    (id, n)| [id].repeat(n)
+                ),
             ),
         )),
         |(v1, v2, vn)| {
@@ -455,7 +460,7 @@ pub fn print_data(decoded: &[u8]) -> Result<(), Box<dyn std::error::Error + '_>>
 But this can be made worse: the whole thing can be collapsed into one function. `rustfmt` is pulling a lot of weight here, to be honest.
 
 ```rust
-pub fn print_data(decoded: &[u8]) -> Result<(), Box<dyn std::error::Error + '_>> {
+pub fn print_data(decoded: &[u8]) -> Result<(), Box<dyn Error + '_>> {
     let result = map(
         tuple((
             map(parse_varint, |f| f.try_into().unwrap_or_default()),
@@ -463,10 +468,16 @@ pub fn print_data(decoded: &[u8]) -> Result<(), Box<dyn std::error::Error + '_>>
             map(
                 tuple((
                     length_count(parse_varint, parse_varint),
-                    length_count(parse_varint, map(parse_varint, |id| [id; 2])),
                     length_count(
                         parse_varint,
-                        map(pair(parse_varint, parse_varint), |(id, n)| [id].repeat(n)),
+                        map(parse_varint, |id| [id; 2])
+                    ),
+                    length_count(
+                        parse_varint,
+                        map(
+                            pair(parse_varint, parse_varint),
+                            |(id, n)| [id].repeat(n)
+                        ),
                     ),
                 )),
                 |(v1, v2, vn)| {
@@ -496,6 +507,10 @@ pub fn print_data(decoded: &[u8]) -> Result<(), Box<dyn std::error::Error + '_>>
 }
 ```
 
-One tiny thing before I continue. Note the `+'_` bound on the return type. Since `nom`'s errors contain the input, which is a reference, converting the errors can sometimes cause Rust's type inference to declare that your functions expect a `'static` lifetime. For example, here, when the `+'_` bound is removed, or [when converting `nom`'s errors to `anyhow`'s errors using the `?` operator.](https://www.reddit.com/r/rust/comments/1goc61r/nom_implemented_parser_is_demanding_i_use_a/). It is not a footgun, per se, as the compiler yells at you. But the error is frankly inscrutable unless you know what you are looking for
+One tiny thing before the end. Note the `+'_` bound on the return type. Since `nom`'s errors contain the input, which is a reference, converting the errors can sometimes cause Rust's type inference to declare that your functions expect a `'static` lifetime. For example, here, when the `+'_` bound is removed, or [when converting `nom`'s errors to `anyhow`'s errors using the `?` operator.](https://www.reddit.com/r/rust/comments/1goc61r/nom_implemented_parser_is_demanding_i_use_a/). It is not a footgun, per se, as the compiler yells at you. But the error is frankly inscrutable unless you know what you are looking for.
 
+## Final Thoughts
 
+Rewriting in nom was a bit easier than I thought it would be. And even the compact "one-liner" is more readable than I thought. The hardest part is probably how to translate the problem into `nom`'s API. (Which I struggled with when I considered using `nom` for [Advent of Code](https://adventofcode.com)). Who knows? Maybe this year.
+
+If you would like to do this with another Rust parser library (`chumsky` or `winnow` or `combine` or `pest`), please do share, and I will happily link it here.
