@@ -1,6 +1,7 @@
 +++
 title = "Parsing Hearthstone Deck Codes"
 date = 2024-11-14
+updated = 2024-11-26
 +++
 
 In the last few days I have been mucking around with [`Mimiron`](@/projects/Mimiron%20Discord%20Bot.md), my Hearthstone API library and Discord bot. One of the main functions of the bot, and the one it is used for the most, is parsing Hearhstone deck codes and presenting them in a pretty fashion.
@@ -457,7 +458,7 @@ pub fn print_data(decoded: &[u8]) -> Result<(), Box<dyn Error + '_>> {
 }
 ```
 
-But this can be made worse: the whole thing can be collapsed into one function. `rustfmt` is pulling a lot of weight here, to be honest.
+But this can be made worse: the whole thing can be collapsed into one function. `rustfmt` is pulling a lot of weight here, to be honest.[^bug]
 
 ```rust
 pub fn print_data(decoded: &[u8]) -> Result<(), Box<dyn Error + '_>> {
@@ -506,6 +507,8 @@ pub fn print_data(decoded: &[u8]) -> Result<(), Box<dyn Error + '_>> {
     Ok(())
 }
 ```
+
+[^bug]: 2024-11-26 update: I found out that this code has a bug: it rejects valid decks without a sideboard. How would one fix that?
 
 One tiny thing before the end. Note the `+'_` bound on the return type. Since `nom`'s errors contain the input, which is a reference, converting the errors can sometimes cause Rust's type inference to declare that your functions expect a `'static` lifetime. For example, here, when the `+'_` bound is removed, or [when converting `nom`'s errors to `anyhow`'s errors using the `?` operator.](https://www.reddit.com/r/rust/comments/1goc61r/nom_implemented_parser_is_demanding_i_use_a/). It is not a footgun, per se, as the compiler yells at you. But the error is frankly inscrutable unless you know what you are looking for.
 
