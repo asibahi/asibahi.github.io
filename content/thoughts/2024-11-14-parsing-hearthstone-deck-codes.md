@@ -196,7 +196,7 @@ fn print_nums(decoded: &[u8]) {
 
 And one can quickly test that it works with the following command. Should you run it with the deck code earlier, you will find it lists the same numbers.
 
-```console
+```sh
 cargo run -- --raw <insert-deck-code-here>
 ```
 
