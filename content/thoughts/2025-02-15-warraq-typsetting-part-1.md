@@ -227,3 +227,15 @@ Running this over my sample document returns this output:
 ```
 
 Excellent! I got 'em right where I want 'em. Now what?
+
+---
+
+## Starting Renderer
+
+Well now comes the renderring.
+
+I have done [some simple text layout and renderring before](../../projects/quran-art-with-variable-fonts/). However, the final output was a PNG, so I just used the [`imageproc` crate](https://docs.rs/imageproc/latest/imageproc/index.html).
+
+Here, my final product is a PDF file. So it makes sense to use a PDF library instead. The usual tool for this is the [`pdf_writer` crate](https://docs.rs/pdf-writer/latest/pdf_writer/), by the Typst folks, and it is what Typst uses as a backend. However, [one of the Typst contributors](https://github.com/LaurenzV/krilla/commits?author=LaurenzV),[^rustybuzz] created a higher level crate to create PDFs, that still allows the user to define their own text layout: [`krilla`](https://docs.rs/krilla/latest/krilla/).
+
+[^rustybuzz]: Who also was instrumental in bringing [`rustybuzz`](https://github.com/harfbuzz/rustybuzz) to par with `harfbuzz`. Cool guy.

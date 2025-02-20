@@ -23,6 +23,9 @@ $code: rgb(117, 94, 159);
     a:visited {
         text-decoration: none;
         color: $accent;
+        code {
+            color: darken($accent, 5%);
+        }
     }
 
     a:hover {
