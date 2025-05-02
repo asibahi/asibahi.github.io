@@ -1,10 +1,9 @@
 +++
 title = "Placemaking Syria"
-date = 2025-03-05
-draft = true
+date = 2025-05-03
 +++
 
-Note: this is a draft socument .the ideas are haphazard and not properly organized.
+> Note: This was written as a draft socument. The ideas are haphazard and not properly organized.
 
 The cities of Syria are, to put it lightly, in bad shape. Decades of neglect followed by the war and [large-scale destruction](https://www.washingtonpost.com/graphics/world/destruction-of-aleppo/) have destroyed the cities. Everyone in Syria wants to rebuild, but we need to re-build it *right*. We should build them for humans.
 
@@ -58,7 +57,7 @@ The City of Riyadh, capital of Saudi Arabia, is as dependent on cars a city can 
 
 This has been, largely, due to the historical mistake (commonly attributed to Greek urban planner [Doxiadis](https://en.wikipedia.org/wiki/Constantinos_Apostolou_Doxiadis)) of expanding the city horizontally over the desert to the north instead of expanding around the various valleys and natural water sources that exist to the south. Riyadh (which is Arabic for "Gardens") is actually green. It has pelnty of natural parks, but the development on the city, and the rapid expansion (aided by cars) has led to the poor state of the city as it is today.
 
-However, the Municipality of Riyadh has over the last decade been meaning to change that, and to remake Riyadh into a beautiful walkable cty that is fit for her name. The natural parks around the city (such as Wadi Hanifa and Wadi Namar) have been developed to become regular resident spots. The massvie Riyadh Metro development that took over the city (which was not without its pains) has finally launched last year, has done much to improve the walkability and reach of the various parts of the city and, to paraphrase one news article, "Promore walking culture amoung Saudis". 
+However, the Municipality of Riyadh has over the last decade been meaning to change that, and to remake Riyadh into a beautiful walkable cty that is fit for her name. The natural parks around the city (such as Wadi Hanifa and Wadi Namar) have been developed to become regular resident spots. The massvie Riyadh Metro development that took over the city (which was not without its pains) has finally launched last year, has done much to improve the walkability and reach of the various parts of the city and, to paraphrase one news article, "Promore walking culture amoung Saudis".
 
 Even the desert, horizontal parts of Riyadh are being developed. The [Green Riyadh](https://www.rcrc.gov.sa/ar/projects/green-riyadh/) is planning to plant around 7.5 million trees around mosques and schools and shopping malls. The grand avenues of the city (like Olaya and Tahlia) are frequent hanging out spots. Changes to the building code in Wadi Hanifa and north of the city are emphasisng denser development. Paid street level parking is being introduced all over to discourage car abandonment on streets.
 
@@ -68,7 +67,7 @@ Mind that this is not a quick and painless work. There have a lot of pains aroun
 
 ## Issues and Challenges
 
-These positions require a lasting policy commitment that recognizes their long term value. People respond to economic incentives, not to long term quality of life ones. If going around the city in a single occupant car is more economically viable (cheaper) than riding the metro, then people will do that. The improvement of public transport and city walkability should coincide with making cars harder and more annoying to use: restricted parking, road tolls (both of which actually help with public service maintenance) are two tools that can be used effectively to do that. 
+These positions require a lasting policy commitment that recognizes their long term value. People respond to economic incentives, not to long term quality of life ones. If going around the city in a single occupant car is more economically viable (cheaper) than riding the metro, then people will do that. The improvement of public transport and city walkability should coincide with making cars harder and more annoying to use: restricted parking, road tolls (both of which actually help with public service maintenance) are two tools that can be used effectively to do that.
 
 The need to start planning this is *right now*. Public transport and urban design take an incredibly long time to design and execute and maintain. Public and policy support should be cultivated and used to support such projects, and view public transport and proper, walkable streets as a *necessity*, not a luxury.
 
@@ -81,11 +80,6 @@ However, what actually prompted me to write this piece is this image of Damascus
 ![Umayad Square](https://cdn.24.co.za/files/Cms/General/d/12395/0bdde630a4c74f01a4034f934056c537.jpg)
 
 Imagine this beautiful grand space without cars or asphalt. How buatiful would that shot have been?
-
-examples: 
-
-
-
 
 ## Additional Reading and Viewing
 

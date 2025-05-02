@@ -30,7 +30,7 @@ A clever Id/numbering scheme for the tiles is described by Freeling.
 
 ![Full set of Dominions Tiles](numbering.png)
 
-Each side is assigned a power of two. So each piece unique id is simply the sum of which sides it connects. Binary system! 
+Each side is assigned a power of two. So each piece unique id is simply the sum of which sides it connects. Binary system!
 
 Each player starts the game with the full set of tiles, minus the Blank, the Zero-Tile, as it does not have a role in the game. So each tile has also, an owner.
 
@@ -40,7 +40,7 @@ All this neatly fits into a `u8`! And Odin has bit-sets native into the language
 
 ```odin
 // 0b 0 0 _ 0 0 0 _ 0 0 0
-//    | |   | | |   | | | 
+//    | |   | | |   | | |
 //    | |   | | |   | | Top_Right
 //    | |   | | |   | Right
 //    | |   | | |   Btm_Right
@@ -49,7 +49,7 @@ All this neatly fits into a `u8`! And Odin has bit-sets native into the language
 //    | |   Top_Left
 //    | Owner_Is_Host
 //    Controller_Is_Host
-// 
+//
 // the two players are Guest and Host. Guest starts.
 
 Tile_Flag :: enum u8 {
@@ -79,7 +79,7 @@ tile_flip:: proc(t: ^Tile) {
 
 Here is where I go back and forth into reading Red Blob Games's [excellent guide to Hexagonal boards](https://www.redblobgames.com/grids/hexagons/).
 
-The board of Dominions is a 9-sided hexagon. 217 cells. Ignoring tile placement restrictions for now, how to actually place tiles onto the board? 
+The board of Dominions is a 9-sided hexagon. 217 cells. Ignoring tile placement restrictions for now, how to actually place tiles onto the board?
 
 I oscillated (heh) between a few ideas, but eventually settled on a giant big array of `[217]Tile`, where an empty cell has the value `0`[^1]. To calculate offsets, I adapted the functions declared in the Red Blob article, and started with this neat loop (`N`, `CENTER`, and `CELL_COUNT` are compile-time constants based on the board's size):
 
@@ -153,9 +153,9 @@ A separate data structure would be needed to track the tiles in player's hands (
 
 An alternative idea is to represent `Tile` itself by a struct, that holds data whether the tile is in play, and if so its location on the board. However, the only way to quickly query the tile's neighbors is to iterate over every tile at every check to know where it is. Might as well stuff them all in an array.
 
-## Hand 
+## Hand
 
-Following the same idea from representing the board, Hands are better implemented as a fixed array. Initializing a full set of hands for both players by transmuting a `u8` into a `Tile`. *That is* why I wanted `Tile`s to be `u8`s to begin with!! 
+Following the same idea from representing the board, Hands are better implemented as a fixed array. Initializing a full set of hands for both players by transmuting a `u8` into a `Tile`. *That is* why I wanted `Tile`s to be `u8`s to begin with!!
 
 ```odin
 HAND_SIZE :: 63
@@ -271,7 +271,7 @@ Bitboards are, at their core, based on a simple observations: a chessboard has 6
 
 In chess implementations: There is a bitboard (read: a `u64`) to mark where all the White pieces are. There is another bitboard to mark where all the squares the Queen sees are.
 
-The other advantage of bitboards is that, since they are just bits, they have bit operations. With a bitboard showing the white pieces are and a bitboard showing where black's pieces can move next turn: just `AND` them together and there is now a new bitboard of which pieces of white are under attack. They are small, simple integers, and operating on them is as easy as integers. 
+The other advantage of bitboards is that, since they are just bits, they have bit operations. With a bitboard showing the white pieces are and a bitboard showing where black's pieces can move next turn: just `AND` them together and there is now a new bitboard of which pieces of white are under attack. They are small, simple integers, and operating on them is as easy as integers.
 
 Unfortunately, however, the Dominions board is decidedly *not* 64 cells, or any such convenient number. It is 217 cells. It would be possible to represent the whole board with a 217bit integer, should it exist, but the largest bit set Odin provides is 128 bits. But have no fear! An array of 7 bit sets can solve the problem, as 7 `u32` integers can fit the needed 217 bits and more (namely 224 bits). This is as small as can be. Thanks to Odin's array programming (which is also taken advantage of for Hex math), using bitwise operations on these bitboards is as easy as they are on usual bit-sets. The additional 7 bits can be used for metadata, as well.
 
@@ -280,7 +280,7 @@ Bitboard :: distinct [7]bit_set[0 ..< 32;u32] // 7 * 32 = 224
 PLAY_AREA: Bitboard : {~{}, ~{}, ~{}, ~{}, ~{}, ~{}, ~{25, 26, 27, 28, 29, 30, 31}}
 DATA_AREA: Bitboard : {{}, {}, {}, {}, {}, {}, {25, 26, 27, 28, 29, 30, 31}} // Extra bits for metadata
 
-// helper procedure for common maths 
+// helper procedure for common maths
 @(private = "file")
 bit_to_col_row :: proc(bit: int) -> (col, row: int) {
     col = bit % 32
@@ -315,7 +315,7 @@ As an addition, I implemented an iterator over the set bits in `Bitboard`. Odin 
 
 ```odin
 // The State machine
-Bitboard_Iterator :: struct { 
+Bitboard_Iterator :: struct {
     bb:   Bitboard,
     next: int,
 }
@@ -483,7 +483,7 @@ Game :: struct {
     groups_map:            [CELL_COUNT]Sm_Key,
     guest_grps, host_grps: Slot_Map,
 }
-``` 
+```
 
 Note that the score is not recorded here. As with many aspects of this design, I am currently unsure if it something should be tracked and updated individually with each move, or something calculated from the game state at any given moment.
 
@@ -548,7 +548,7 @@ So far, I made no mention of the game's rules, only talking about its physical p
 - Lastly, it is illegal to cause **Oscillation**: a Section which has no Liberties. [^5]
 - A Player may, instead of placing a Tile, pass the turn instead. Or if they have no legal moves, they *must*.
 
-[^5]: It is *Oscillation* because the resulting Group has no Liberties, and therefore has no clear Controller, so it *oscillates* between both colors. This is way the Blank tile has no role in the game: it automatically oscillates. 
+[^5]: It is *Oscillation* because the resulting Group has no Liberties, and therefore has no clear Controller, so it *oscillates* between both colors. This is way the Blank tile has no role in the game: it automatically oscillates.
 
 ### Scoring
 
@@ -690,7 +690,7 @@ if grp, ok := group_section_init(move, game); ok {
     grp := new_clone(grp)
     key := slotmap_insert(game.host_grps, grp)
     game.groups_map[hex_to_index(move.hex)] = key
-} 
+}
 ```
 
 ### `group_attach_to_friendlies`
@@ -749,15 +749,15 @@ group_extend_or_merge :: proc(move: Move, game: ^Game) -> (ok: bool = true) {
         }
     }
     assert(
-        tile_liberties_count >= 0, 
+        tile_liberties_count >= 0,
         "if this is broken there is a legality bug"
     )
     assert(
-        nfg_cursor > 0, 
+        nfg_cursor > 0,
         "This proc should not be called with no friendly neighbors"
         )
     // and if this is false then this might be a Suicide
-    (tile_liberties_count > 0) or_return   
+    (tile_liberties_count > 0) or_return
 
     // == Are we the Baddies?
     friendly_grps: Slot_Map
@@ -915,7 +915,7 @@ Now, merging groups membership and liberties also merges their enemy connections
         cursed_grp := slotmap_remove(friendly_grps, blessed_key)
         defer free(cursed_grp)
 
-        // Scratchpad 
+        // Scratchpad
         nbr_enemy_grps := make([dynamic]Sm_Key)
         defer delete(nbr_enemy_grps)
 
@@ -971,7 +971,7 @@ Change the procedure's name to `group_attach_to_friendlies`, and *now* it is don
 
 ### `group_attach_to_enemies`
 
-Similarly to attaching to friendlies, this move can either be a nothing, a capture, or a suicide. The logic of the `friendlies` procedure might need to be repeated in this one. And the checks done and the data collected would also need to be repeated. 
+Similarly to attaching to friendlies, this move can either be a nothing, a capture, or a suicide. The logic of the `friendlies` procedure might need to be repeated in this one. And the checks done and the data collected would also need to be repeated.
 
 So why separate it at all? The idea was it would simplify handling, but it does not seem to do that. So, rethinking the move handling, allow me to try summarising the logic that *actually* needs to be done (this was revised in tandem with writing the code in the next section):
 
@@ -1140,7 +1140,7 @@ game_update_state_inner :: proc(move: Move, game: ^Game) {
     capture_occurance := false
     for key in surrounding_enemy_grps {
         assert(
-            slotmap_contains_key(enemy_grps, key), 
+            slotmap_contains_key(enemy_grps, key),
             "Enemy slotmap does not have enemy Key"
         )
         temp_grp := slotmap_get(enemy_grps, key)
@@ -1210,7 +1210,7 @@ game_update_state_inner :: proc(move: Move, game: ^Game) {
 
     blessed_key = new_family[0]
     assert(
-        slotmap_contains_key(enemy_grps, blessed_key), 
+        slotmap_contains_key(enemy_grps, blessed_key),
         "Enemy key is not in enemy map"
     )
 
@@ -1286,7 +1286,7 @@ game_regen_legal_moves :: proc(game: ^Game) {
 
     outer: for key, idx in game.groups_map {
         // Hex must be empty. Hope Slotmap does not give a Key of 0.
-        (key == 0) or_continue 
+        (key == 0) or_continue
 
         hex := hex_from_index(idx)
         for flag in CONNECTION_FLAGS {
@@ -1332,8 +1332,8 @@ game_regen_legal_moves :: proc(game: ^Game) {
                 ((!in_bounds && flag not_in tile) ||
                  (in_bounds  && (tile_is_empty(nbr_tile) ||
   /* so much rightward drift */  (flag in     tile && flag_opposite(flag) in     nbr_tile) ||
-  /* the line is 102 chars */    (flag not_in tile && flag_opposite(flag) not_in nbr_tile)))) or_break 
-                
+  /* the line is 102 chars */    (flag not_in tile && flag_opposite(flag) not_in nbr_tile)))) or_break
+
                 score += 1 if cond else 0
             }
         }
@@ -1367,8 +1367,8 @@ Encoding these rules in the loop above is perhaps the best option. It would save
 
             score   := 0 // if score is 6, tile is playable.
             osc_pen := 0 // unless this is equal to Tile cardinality
-            defer if score == 6 && osc_pen != card(tile & CONNECTION_FLAGS) { 
-                append(&game.legal_moves, Move{hex, tile}) 
+            defer if score == 6 && osc_pen != card(tile & CONNECTION_FLAGS) {
+                append(&game.legal_moves, Move{hex, tile})
             }
 
             for flag in CONNECTION_FLAGS {
@@ -1435,17 +1435,17 @@ main :: proc() {
     ok: bool
 
     ok = game_make_move(
-        &game, 
+        &game,
         Move{hex = {0, 0}, tile = tile_from_id(63, .Guest)}
     )
     fmt.printfln("%v", ok)
 
     ok = game_make_move(
-        &game, 
+        &game,
         Move{hex = {1, 0}, tile = tile_from_id(63, .Host)}
     )
     fmt.printfln("%v", ok)
-    
+
     fmt.printfln("%v", game.groups_map)
 }
 ```
@@ -1504,7 +1504,7 @@ Group_Store :: // todo
 ```
 The field `_padding` is there to suppress a compiler warning about boolean-only bit fields being a terrible idea.
 
-Mind you `Rethought_Group` has two Odin features Ginger Bill dislikes using: `using` and `bool`-only `bit_field`s, and uses them together, with an anonymous `bit_field` to boot. (I am actually pleasantly surprised this compiles and works at all.) My goal here is to essentially cram both of `extendable` and `alive` booleans into one byte, and they do not really make sense to me as their own type, and keep the nice ergonomics of using them. The advised/Ginger Bill-authorized way to write this is the following: 
+Mind you `Rethought_Group` has two Odin features Ginger Bill dislikes using: `using` and `bool`-only `bit_field`s, and uses them together, with an anonymous `bit_field` to boot. (I am actually pleasantly surprised this compiles and works at all.) My goal here is to essentially cram both of `extendable` and `alive` booleans into one byte, and they do not really make sense to me as their own type, and keep the nice ergonomics of using them. The advised/Ginger Bill-authorized way to write this is the following:
 
 ```odin
 Group_Status :: enum u8 {
@@ -1513,7 +1513,7 @@ Group_Status :: enum u8 {
 }
 Rethought_Group :: struct {
     state:  [CELL_COUNT]Hex_State,
-    status: bit_set[Object_Status; u8],
+    status: bit_set[Group_Status; u8],
 }
 
 if .Extendable in grp.status { // etc
@@ -1563,8 +1563,8 @@ store_insert :: proc(store: ^Group_Store, group: Group) -> Group_Handle {
 
 store_get :: proc(store: ^Group_Store, key: Group_Handle) -> (ret: ^Group, ok: bool) {
     (key.valid &&
-     store.player == key.owner && 
-     key.idx < store.cursor && 
+     store.player == key.owner &&
+     key.idx < store.cursor &&
      store.data[key.idx].alive) or_return
 
     return &store.data[key.idx], true
@@ -1601,7 +1601,7 @@ main :: proc() {
 }
 ```
 
-And voila! It gives two different keys of `128` and `192` (though I can't quite tell which is which) I caught a subtle bug while I was going through the code, which gave the need for a `valid` field in the key, so that it guarantees no valid key is `0`. 
+And voila! It gives two different keys of `128` and `192` (though I can't quite tell which is which) I caught a subtle bug while I was going through the code, which gave the need for a `valid` field in the key, so that it guarantees no valid key is `0`.
 
 Testing with different pairs of first moves has gone swimmingly. Things get captured when they should and get rejected when they should. But testing a whole game is more difficult to verify looking at `stdout` printed arrays of numbers. A different visualization is required.
 
@@ -1629,17 +1629,17 @@ A hexagonal board does not quite lend itself to being nicely printed in the term
            |   |   |   |   |
           / \ / \ / \ / \ / \
          |   |   |   |   |   |
-        / \ / \ / \ / \ / \ / \ 
+        / \ / \ / \ / \ / \ / \
        |   |   |   |   |   |   |
-      / \ / \ / \ / \ / \ / \ / \  
+      / \ / \ / \ / \ / \ / \ / \
      |   |   |   |   |   |   |   |
       \ / \ / \ / \ / \ / \ / \ /
        |   |   |   |   |   |   |
-        \ / \ / \ / \ / \ / \ / 
+        \ / \ / \ / \ / \ / \ /
          |   |   |   |   |   |
-          \ / \ / \ / \ / \ / 
+          \ / \ / \ / \ / \ /
            |   |   |   |   |
-            \ / \ / \ / \ / 
+            \ / \ / \ / \ /
 
 # flat representation
 # letter/number coordinates system
@@ -1681,7 +1681,7 @@ board_print :: proc(board: Board) {
     w_on_b :: ansi.CSI + ansi.FG_WHITE + ";" + ansi.BG_BLACK + ansi.SGR
     b_on_w :: ansi.CSI + ansi.FG_BLACK + ";" + ansi.BG_WHITE + ansi.SGR
     end :: ansi.CSI + ansi.RESET + ansi.SGR
-    
+
     row := min(i8)
     for tile, idx in board {
         hex := hex_from_index(idx)
@@ -1696,7 +1696,7 @@ board_print :: proc(board: Board) {
             fmt.print("|   ")
         } else if .Controller_Is_Host in tile {
             fmt.printf(
-                "|" + w_on_b + "%3o" + end, 
+                "|" + w_on_b + "%3o" + end,
                 tile & ~{.Controller_Is_Host}
             )
         } else {
@@ -1766,7 +1766,7 @@ move_mindsports_parse :: proc(str: string) -> (ret: Move, ok: bool) #optional_ok
 
     row := N - i8(str[c] - 'a')
         c += 1
-        
+
     col: i8
     for len := 2; len >= 0; len -= 1 {
         if len == 0 do return {}, false
@@ -1942,7 +1942,7 @@ So what does the code actually *do*? Time to use a debugger.
 
 ### Setting up the Debugger
 
-Thankfully, due to dabbling in Rust, I already had LLDB installed as a VSCode extension. All is needed for it to work is to create a `launch.json` file (that's almost filled up already), and have it work on an executable built with: 
+Thankfully, due to dabbling in Rust, I already had LLDB installed as a VSCode extension. All is needed for it to work is to create a `launch.json` file (that's almost filled up already), and have it work on an executable built with:
 
 ```sh
 $ odin build . -debug
@@ -2001,7 +2001,7 @@ Now all I need to do is set breakpoints and click the VSCode button that says `D
 
 But how to set a conditional breakpoint based on the move number when `game_make_move` does not know the move number?
 
-Normally, one would either have to set the move number as a global variable, *or* pass it on as an explicit parameter into every procedure, both are equally annoying. In Odin, I can just use the `context` system. The `Context` struct, which is passed implicitly by default to every Odin procedure, contains a `user_index` field which can be set to whatever. Inside `game_make_move` or any of its inner procedures, I simply check for `context.user_index`. 
+Normally, one would either have to set the move number as a global variable, *or* pass it on as an explicit parameter into every procedure, both are equally annoying. In Odin, I can just use the `context` system. The `Context` struct, which is passed implicitly by default to every Odin procedure, contains a `user_index` field which can be set to whatever. Inside `game_make_move` or any of its inner procedures, I simply check for `context.user_index`.
 
 ```odin
     // inside main
@@ -2036,8 +2036,8 @@ Adding `blessed_key` to `group_map` on creation passes the `game_make_move` proc
 import "core:fmt"
 
 store_remove :: proc(
-    store: ^Group_Store, 
-    key: Group_Handle, 
+    store: ^Group_Store,
+    key: Group_Handle,
     loc := #caller_location // <-- Default value so call sites don't change.
 ) -> (ret: Group, ok: bool) {
     if key.idx == 8 && key.owner == .Guest { // <-- the offending group
@@ -2070,8 +2070,8 @@ Now that the example game runs to completion without hitting any assertions, tim
 Work is not done on this by any means, even if I ascertained it is 100% bug free. (the legal move generator is not thoroughly tested really.) But I have spent a month, on and off, on this and my wife is frankly sick of me. So here is a list of what is left to implement in round 2:
 
 1. Undoing Moves: Necessary for engine implementations, and easy in theory. All is needed really is to copy the game's state into a dynamic array of previous game states. To save memory, only saving previous `Board`s is required, as they actually have enough data to generate all the remaining fields.
-2. An interactive interface. A way to interact with the game outside of writing procedure calls in `main()` Either through a wasm module or a CLI interface, or a common interface either one can use. 
-3. Nicer, graphic visualization. The ASCII visualization is useful for debugging, but it is not actually playable. This game needs beautiful art and a beautiful Graphical User Interface. 
+2. An interactive interface. A way to interact with the game outside of writing procedure calls in `main()` Either through a wasm module or a CLI interface, or a common interface either one can use.
+3. Nicer, graphic visualization. The ASCII visualization is useful for debugging, but it is not actually playable. This game needs beautiful art and a beautiful Graphical User Interface.
 
 ## Lessons Learned
 
@@ -2082,7 +2082,7 @@ So throughout working on this article (for almost a whole month) I advanced my k
 3. HTML and CSS and Zola templating (in setting up this website),
 4. Basic usage of LLDB debugging,
 
-So,  this was a fun ride. But it is time to move on to something else. 
+So,  this was a fun ride. But it is time to move on to something else.
 
 The code here is in the [`bustan` repository](https://github.com/asibahi/bustan). You can see the evolution of the code, and much of what is in this article, through the git history.
 
