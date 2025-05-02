@@ -19,9 +19,9 @@
         {{ config.extra.blurp }} <br>
     </header>
     {% endblock header %}
+        {% set content = get_section(path="_index.md") %}
     {% block content %}
     <main>
-        {% set content = get_section(path="_index.md") %}
         {% set limit = 10 %}
 
         {% for section in content.subsections %}
@@ -43,7 +43,7 @@
                     </small>
                 </li>
                 {% endfor %}
-                
+
                 {% if section.pages | length > limit %}
                 <li><small><a href="{{ section.permalink }}">More</a></small></li>
                 {% endif %}
@@ -52,6 +52,7 @@
             {% endif %}
             {% endfor %}
     </main>
+    {% endblock content %}
 
     {% set linked_pages = content.pages | filter(attribute="extra.in_footer") %}
     {% if config.extra.links or linked_pages %}
@@ -64,6 +65,5 @@
             {% endfor %}
         </small> </footer>
     {% endif %}
-    {% endblock content %}
 </body>
 </html>

@@ -86,3 +86,5 @@ Imagine this beautiful grand space without cars or asphalt. How buatiful would t
 - [(Arabic) Sharik Podcast: Meeting with Abdul Rahman al-Sayel: City Humanization and Sustainabolty](https://www.youtube.com/watch?v=WmGKZFzJcoM). Al-Sayel's [Twitter account](https://x.com/alsayel) is a worth a follow.
 - [(English) What is Placemaking, Project for Publix Spaces](https://www.pps.org/article/what-is-placemaking)
 - If you don't mind the vulgarity: the subreddit [r/fuckcars](https://www.reddit.com/r/fuckcars/wiki/faq/#wiki_why_does_this_sub_hate_cars.3F) has a nice write up with additional resouces.
+
+---
