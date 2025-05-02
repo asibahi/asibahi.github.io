@@ -16,11 +16,11 @@ bottom_footnotes = true
 
 [extra]
 
+blurp = "Architect and hobbyist. Bad at websites and witty bios."
 links = [
     { title = "Mail", href = "mailto:a.sibahi@gmail.com" },
     { title = "Twitter", href = "https://x.com/@asibahi" },
+    { title = "Instagram", href = "https://www.instagram.com/asibahi" },
     { title = "typo.social", href = "https://typo.social/@asibahi" },
     { title = "GitHub", href = "https://github.com/asibahi" },
 ]
-
-blurp = "Architect and hobbyist. Bad at websites and witty bios."
