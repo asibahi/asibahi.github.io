@@ -41,3 +41,14 @@ const Q =
 ;
 const o = @import("std").io.getStdOut().writer();
 ```
+
+## Swift
+
+No main function but different order.
+
+```swift
+let Q = #"""
+print("let Q = #\"\"\"\n\(Q)\n\"\"\"#\n\(Q)")
+"""#
+print("let Q = #\"\"\"\n\(Q)\n\"\"\"#\n\(Q)")
+```
