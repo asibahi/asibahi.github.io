@@ -146,13 +146,15 @@ hr {
 }
 hr::after{
     font-size: x-large;
-    content: '\1fadf'; // splatter
+    /* content: '\1fadf'; // splatter -- broken on safari */
+    content: '\1f4b8'; // money with wings
 }
-hr:nth-of-type(3n)::after {
+hr:nth-last-of-type(3n)::after {
     content: '\1faab'; // low battery
 }
-hr:nth-of-type(3n + 2)::after {
-    content: '\1fabe'; // leafless tree
+hr:nth-last-of-type(3n + 2)::after {
+    /* content: '\1fabe'; // leafless tree -- broken on safari */
+    content: '\23f3'; // hourglass not done
 }
 
 h1,
