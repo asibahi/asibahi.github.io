@@ -5,6 +5,7 @@
 
 <head>
     <meta charset="utf-8">
+   <meta name="theme-color" content=" rgb(203, 132, 0)" /> <!-- accent color in _theme.scss -->
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description"
         content="{% block description %}{{ section.description | default(value=config.description) }}{% endblock description %}">
@@ -13,6 +14,7 @@
 </head>
 
 <body>
+	<div class = "container">
     {% block header %}
     <header class="space">
         <h1>{{ config.title }}</h1>
@@ -65,5 +67,6 @@
             {% endfor %}
         </small> </footer>
     {% endif %}
+	</div>
 </body>
 </html>
