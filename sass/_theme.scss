@@ -5,63 +5,56 @@ $tertiary: #dddddd;
 $accent: rgb(203, 132, 0);
 $code: rgb(117, 94, 159);
 
-
-@mixin light-theme {
-    color: $foreground;
-    background-color: $background;
-
-    .secondary {
-        color: $secondary;
-    }
-
-    hr::after{
-        color: $foreground;
-    }
-
-    a,
-    a:link,
-    a:visited {
-        text-decoration: none;
-        color: $accent;
-        code {
-            color: darken($accent, 5%);
-        }
-    }
-
-    a:hover {
-        color: darken($accent, 30%);
-    }
-
-    blockquote {
-        border-left: 2px solid $secondary;
-    }
-
-    li code,
-    p code {
-        color: $code;
-    }
-
-    .footnote-definition sup {
-        color: $secondary;
-    }
-
-    table {
-
-        th,
-        td {
-            border-color: darken($tertiary, 5%);
-        }
-
-        thead,
-        tr:nth-child(even) {
-            background-color: lighten($tertiary, 10%);
-        }
-    }
-
-
-}
-
+// all defintions of colors must remain in this file
 
 body {
-    @include light-theme;
+	color: $foreground;
+	background-color: $background;
+
+	.secondary {
+		color: $secondary;
+	}
+
+	hr::after {
+		color: $foreground;
+	}
+
+	a,
+	a:link,
+	a:visited {
+		text-decoration: none;
+		color: $accent;
+		code {
+			color: darken($accent, 5%);
+		}
+	}
+
+	a:hover {
+		color: darken($accent, 30%);
+	}
+
+	blockquote {
+		border-left: 2px solid $secondary;
+	}
+
+	li code,
+	p code {
+		color: $code;
+	}
+
+	.footnote-definition sup {
+		color: $secondary;
+	}
+
+	table {
+		th,
+		td {
+			border-color: darken($tertiary, 5%);
+		}
+
+		thead,
+		tr:nth-child(even) {
+			background-color: lighten($tertiary, 10%);
+		}
+	}
 }
