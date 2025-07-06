@@ -21,7 +21,19 @@ body {
 	margin: 5em auto;
 
 	.container {
-		// do not move this out of body
+	}
+}
+
+.eagle {
+	position: absolute;
+	top: 100px;
+	right: 5%;
+	width: 70pt;
+	height: auto;
+}
+@media (max-width: 600px) {
+	.eagle {
+		display:none;
 	}
 }
 
