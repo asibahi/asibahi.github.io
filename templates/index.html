@@ -1,75 +1,76 @@
-<!DOCTYPE html>
+<!doctype html>
 <html {% if page.extra.arabic %} dir="rtl" {% else %} dir="ltr" {% endif %}>
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
 
-<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="{% block description -%}
+				{{ section.description | default(value=config.description) }}
+			{%- endblock description %}"
+		/>
+		<title>{% block title -%}{{ config.title }}{%- endblock title %}</title>
+		<link rel="stylesheet" href="{{ get_url(path='style.css', cachebust=true) }}" />
+	</head>
 
-<head>
-    <meta charset="utf-8">
-   <meta name="theme-color" content=" rgb(203, 132, 0)" /> <!-- accent color in _theme.scss -->
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description"
-        content="{% block description %}{{ section.description | default(value=config.description) }}{% endblock description %}">
-    <title>{% block title %}{{ config.title }}{% endblock title %}</title>
-    <link rel="stylesheet" href="{{ get_url(path='style.css', cachebust=true) }}">
-</head>
-
-<body>
-	<a href="https://youtu.be/tXGQPGi-fZw">
-		<img src=" /eagle.png" class="eagle">
-	</a>
-	<div class = "container">
-    {% block header %}
-    <header class="space">
-        <h1>{{ config.title }}</h1>
-        {{ config.extra.blurp }} <br>
-    </header>
-    {% endblock header %}
-        {% set content = get_section(path="_index.md") %}
-    {% block content %}
-    <main>
-        {% set limit = 10 %}
-
-        {% for section in content.subsections %}
-
-        {% set section = get_section(path=section) %}
-
-        {% if section.title != "Articles" and section.pages %}
-        <h3>{{section.title}}</h2>
-        {% endif %}
-
-            {% if section.pages %}
-            <ul class="index">
-                {% for post in section.pages | slice(end=limit) %}
-                <li {% if post.extra.arabic %} dir="rtl" {% endif %}>
-                    <a href="{{ post.permalink }}">{{ post.title }}</a>
-                    <small class="secondary">
-                        {% if post.date %} - {{post.date}} {%  endif %}
-                        {% if post.description %}<br>{{ post.description }}{% endif %}
-                    </small>
-                </li>
-                {% endfor %}
-
-                {% if section.pages | length > limit %}
-                <li><small><a href="{{ section.permalink }}">More</a></small></li>
-                {% endif %}
-            </ul>
-
-            {% endif %}
-            {% endfor %}
-    </main>
-    {% endblock content %}
-
-    {% set linked_pages = content.pages | filter(attribute="extra.in_footer") %}
-    {% if config.extra.links or linked_pages %}
-    <footer> <small>
-            {% for link in config.extra.links %}
-            <a class="mylink" href="{{ link.href }}" rel="me">{{ link.title }}</a>
-            {% endfor %}
-            {% for page in linked_pages %}
-            <a class="mylink" href="{{ page.permalink }}">{{ page.title }}</a>
-            {% endfor %}
-        </small> </footer>
-    {% endif %}
-	</div>
-</body>
+	<body>
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			{% block header %}
+			<header class="space">
+				<h1>{{ config.title }}</h1>
+				{{ config.extra.blurp }} <br />
+			</header>
+			{% endblock header %}
+			{% set content = get_section(path="_index.md") %}
+			{% block content %}
+			<main>
+				{% set limit = 10 %}
+				{% for section in content.subsections %}
+					{% set section = get_section(path=section) %}
+					{% if not loop.first and section.pages %}
+						<h3>{{section.title}}</h3>
+					{% endif %}
+					{% if section.pages %}
+						<ul class="index">
+							{% for post in section.pages | slice(end=limit) %}
+								<li {% if post.extra.arabic %} dir="rtl" {% endif %}>
+									<a href="{{ post.permalink }}">{{ post.title }}</a>
+									<small class="secondary">
+										{% if post.date %} - {{post.date}} {% endif %}
+										{% if post.description %}<br />{{ post.description }}{% endif %}
+									</small>
+								</li>
+							{% endfor %}
+							{% if section.pages | length > limit %}
+								<li>
+									<small><a href="{{ section.permalink }}">More</a></small>
+								</li>
+							{% endif %}
+						</ul>
+					{% endif %}
+				{% endfor %}
+			</main>
+			{% endblock content %}
+			{% set linked_pages = content.pages | filter(attribute="extra.in_footer") %}
+			{% if config.extra.links or linked_pages %}
+				<footer>
+					<small>
+						{% for link in config.extra.links %}
+							<a class="mylink" href="{{ link.href }}" rel="me">{{ link.title }}</a>
+						{% endfor %}
+						{% for page in linked_pages %}
+							<a class="mylink" href="{{ page.permalink }}">{{ page.title }}</a>
+						{% endfor %}
+					</small>
+				</footer>
+			{% endif %}
+		</div>
+	</body>
 </html>

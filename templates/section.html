@@ -1,25 +1,31 @@
 {% extends "page.html" %}
 
-{% block title %}{{ config.title }} | {{ section.title }}{% endblock title %}
+{% block title -%}
+	{{ config.title }} | {{ section.title }}
+{%- endblock title%}
 
-{% block h1 %}<h1>{{ section.title }}</h1>{% endblock h1%}
+{% block h1 %}
+	<h1>{{ section.title }}</h1>
+{% endblock h1 %}
 
 {% block content %}
-<main>
-    {% if section.pages %}
-            <ul class="index">
-                {% for post in section.pages %}
-                <li {% if post.extra.arabic %} dir="rtl" {% endif %}>
-                    <a href="{{ post.permalink }}">{{ post.title }}</a>
-                    <small class="secondary">
-                        {% if post.date %} - {{post.date}} {%  endif %}
-                        {% if post.description %}<br>{{ post.description }}{% endif %}
-                    </small>
-                </li>
-                {% endfor %}
-            </ul>
-    {% else %}
-    <p>No posts yet.</p>
-    {% endif %}
-</main>
+	<main>
+		{% if section.pages %}
+			<ul class="index">
+				{% for post in section.pages %}
+					<li {% if post.extra.arabic %} dir="rtl" {% endif %}>
+						<a href="{{ post.permalink }}">{{ post.title }}</a>
+						<small class="secondary">
+							{% if post.date %} - {{post.date}} {% endif %}
+							{% if post.description %}
+								<br /> {{ post.description }}
+							{% endif %}
+						</small>
+					</li>
+				{% endfor %}
+			</ul>
+		{% else %}
+			<p>No posts yet.</p>
+		{% endif %}
+	</main>
 {% endblock content %}
