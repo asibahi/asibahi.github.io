@@ -201,16 +201,3 @@
 		format("woff2");
 	unicode-range: U+1fa89, U+1fa8f, U+1fabe, U+1fac6, U+1fadc, U+1fadf, U+1fae9;
 }
-
-@font-face {
-	font-family: "Optician Sans";
-	src: url("/fonts/Web-TT/Optiker-K.eot");
-	src:
-		url("/fonts/Web-TT/Optiker-K.eot?#iefix") format("embedded-opentype"),
-		url("/fonts/Web-PS/Optiker-K.woff2") format("woff2"),
-		url("/fonts/Web-TT/Optiker-K.woff") format("woff"),
-		url("/fonts/Web-TT/Optiker-K.ttf") format("truetype");
-	font-weight: normal;
-	font-style: normal;
-	font-display: swap;
-}

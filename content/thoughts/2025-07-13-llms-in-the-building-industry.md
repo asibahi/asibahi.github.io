@@ -6,7 +6,7 @@ date = 2025-07-13
 
 This is a collection of ideas that may or may not be feasible to implement or to have as the base idea of a start up. It is _not_ a structured document, but more of a stream of thought.
 
-# IFC
+## IFC
 
 [Industry Foundation Classes](https://en.wikipedia.org/wiki/Industry_Foundation_Classes)[^ifc] is an open source data format for modeling BIM (Building Information Modeling). It is supported by Revit, the market leader. A well known open source implementation is [Bonsai BIM](https://bonsaibim.org). I _believe_ the implementation is inherently text based and can be accessed with programmer oriented tooling such as `git`.
 
@@ -16,9 +16,9 @@ There are graphical tools that allow the user to see the difference between two 
 
 ---
 
-# For Potential Homeowners
+## For Potential Homeowners
 
-## Scenario
+### Scenario
 
 Imagine the following: a website where a client can submit their plot details, their budget, and make a write up on what they want in their dream house.
 
@@ -26,7 +26,7 @@ For example: They have three kids and their eldest wants to be a ballerina so th
 
 The website would take the hard data from the plot and the plot's location, and the specifics of the local area building code, and the text description provided by the client (the more detailed the better). Then out of these disparate pieces of the info and combine them together into the ideal house for the subject.
 
-## Sanity Checks
+### Sanity Checks
 
 This would require some sort of sanity checker to verify the results, similar to how LLM-based coding agents work with compilers and language serverso.[lsp] The LLMs hallucinate whatever they want, and the Editor tells them whether the code compiles or not. Sanity checks include, but are not limited to, code compliance, cost overruns, "there is a room without a door", etc.
 
@@ -40,19 +40,19 @@ There *must* be a qualified human reviewer, as the final sanity check. More impo
 
 The price could be fairly cheap: 1,000SAR for one plan. The absolute cheapest office is about 5,000, and these are the ones just pulling a predesigned house out of the drawer.
 
-## Scale
+### Scale
 
 Working at scale, a similar technology can be used to benefit real estate developers. Instead of the usual cookie cutting measure of a thousand identical houses, variation can be made in each individual unit. Depending on the construction methods used, this might not be more expensive to actually build than cookies.
 
 ---
 
-# For Engineering Offices
+## For Engineering Offices
 
 There are many different professions working in a regular Engineering[^chagrin] practice. This is an overview following the different stages of a project.
 
 [^chagrin]: Including Architectural and Urban Planning practices.
 
-## Client Brief
+### Client Brief
 
 Every project starts with a brief.[^brief] The brief includes an intro the project and the different stakeholders and potential desires etc. To respond to the brief, offices are required usually to make both a technical offer and a financial offer.
 
@@ -64,7 +64,7 @@ The financial offer is more of the same. It is based on however the office wants
 
 This is a lot of clerical and reptitive work that nonetheless must be customized for each client. It involves a large number of staff from different departments: accounting, secretaries, engineering, const estimation (which could fall under engineering).
 
-## Specifications
+### Specifications
 
 Specifications are the most important, and perhaps the most overlooked, part of the design documents. They can either be dictated by the client or, more appropriately, delivered as part of the service.
 
@@ -85,7 +85,7 @@ Large offices have their own specifications library. Others make them up as they
 
 A potential use of LLMs here is to genrate these specifications from a local supplier database. Perhaps even contrasting that with the client's brief and their desired level of quality. The Model could be given a template for specifications, or the specirications for a previous project, and directed to generate specificatiosn based on the design drawings and written guidelines and up to date supplier database.
 
-## Consultancy
+### Consultancy
 
 Work for Engineering offices is not restricted to design. Indeed the more profitable line of work is construction consultancy, or supervision. Reviewing the contraxctor's submittals for materials, shop drawings,[^shop] staff listings, Requests For Clarification (RFCs), and what have you.
 
@@ -99,13 +99,13 @@ The methods of communication vary by project. Either they are official stamped b
 
 ---
 
-# For Construction Companies
+## For Construction Companies
 
 Much of the talk about the client briefs and comparing specifications with suppliers database applies here as well. Searching a local database, not necessarily neatly organized with all the relevant info buried in PDFs and websites, to find suppliers whose products match the given specifications.
 
 There are also many applications for logistics. How to store the materials and how to transport the materials and how to protect them from the elements are all common challenged. But not unique to construction work. So solutions from other industries (such as manufacturing) could be used.
 
-## Cost Estimations
+### Cost Estimations
 
 This is perhaps a task more appropriate for proper old algorithms than language models. but a common painpoint small contractors have is how to properly estimate the cost of a building, based on drawings and a client brief. The drawings themselves are usually presented as PDFs or as DWG files (sometimes). One would be truly lucky to get the drawings in IFC (or really any BIM) format. PDFs and DWGs include no metadata about the project's elements. The data is provided by things designed for human readers: hatching, dimensions, and labels.
 
@@ -113,7 +113,7 @@ There are a few ways this can be approached. Either reading the drawings as a hu
 
 The other approach is to create a IFC model based on the drawings, and have the regular BIM tooling to calcluate this data. The prices could be tied to some live database of material prices, or not.
 
-## Waste Reduction
+### Waste Reduction
 
 Note this common particular scenario. Structual steel reinforcement comes in 12m long bars. A common floor height is 4m. However, due to structual requirements that are beyond my understanding, the bars embedded in columns should be one meter longer. This means that one bar can be cut in two 5m long pieces. You end up with a useless wasted 2m piece. There are about 12 bars in every column and the floor of a typical house can have around 25 columns. You do the marh.
 
@@ -133,7 +133,7 @@ A few real life products can be used to solve this problem. Aluminum and Plastic
 
 the ideal solution would be to design, from the start, for minimizing formwork waste. However, as this is the Contractors section, an algorithm to minimize waste on a given design (how to cut the boards in a reusable manner, etc.) would be extremely useful to contractors.
 
-## Clarifications and Change Orders
+### Clarifications and Change Orders
 
 Managing clients and consultants is perhaps the Contractor's most difficult task. The scopes keep on expanding and the specifications keep on tightening while prices and schedules are expected to remain the same. The drawings or specificiations are often incomplete and missing vital info, or just plain wrong.
 
@@ -147,7 +147,7 @@ This verification step cen be useful for Engineering Offices as well.
 
 ---
 
-# Conclusion
+## Conclusion
 
 In conclusion, this documents outlines a few ways which Large Language Models and Algorithms can be used to ease the pain of the different people in the construction process. These omit some things like dealing with government regulations and accounting and human resources and what have you: the lements common in almost eveyr business. But it tpouches, instead, what is perhaps unique to the profession.
 
