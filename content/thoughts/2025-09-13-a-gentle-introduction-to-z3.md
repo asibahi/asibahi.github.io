@@ -135,7 +135,9 @@ This prints out the following:
 
 Oh it is `Unsat`. Unsatisfiable. Bummer. This means this cannot be solved as defined.
 
-Let's try changing the type to `Real`. The `Real` type does not have the same nice ergonomics as `Int` apparently, so the code will look slightly uglier. This is the new updated code.
+Let's try changing the type to `Real`.[^float] The `Real` type does not have the same nice ergonomics as `Int` apparently, so the code will look slightly uglier. This is the new updated code.
+
+[^float]: Can also use `Float`.
 
 ```rs
 use z3::{Solver, ast::Real};
@@ -201,5 +203,239 @@ x: 5.667	y: 11.333
 ```
 
 Nice. Isn't this grand?
+
+---
+
+## Multiple Solutions
+
+As I am sure you know from your high school math, some equations have multiple solutions. Here is a simple one.
+
+```
+x * x = 4
+```
+
+The Rust bindings have a nice method for getting multiple solutions out of a solver, simple called `solutions`. It works similarly to `model.eval()` above, and takes the same paramaters with the same output. Here is the complete program. (I am going back to `Int` because I am not cool enough for `Real` numbers.)
+
+```rust
+use z3::{Solver, ast::Int};
+fn main() {
+	let solver = Solver::new();
+	let x = Int::new_const("x");
+
+	solver.assert((&x * &x).eq(4));
+	println!("{solver:?}");
+
+	// This terminates when `check` does not return `Sat`
+	for (idx, s) in solver.solutions(x, true).enumerate() {
+		let s = s.as_i64().unwrap();
+		println!(";{}:\t{s}", idx + 1);
+	}
+}
+```
+
+Which prints:
+
+```smt2
+(declare-fun x () Int)
+(assert (= (* x x) 4))
+
+;1:	-2
+;2:	2
+```
+
+I am not clear really on how to get multiple solutions with the regular `check` followed by `get_model` method, but this one is easy enough to use. Also, some problems might have infinitely many solutions, so it is advisable to use `take` with the `solutions` iterator. To demonstrate, I will use the circle equation.
+
+```
+x * x + y * y = 25
+```
+
+Here is the straightforward script followed by the printed out result. Note that the `fresh_const` API creates a unique name for every invocation.
+
+```rust
+use z3::{Solver, ast::Int};
+fn main() {
+	let solver = Solver::new();
+
+	let x = Int::fresh_const("x");
+	let y = Int::fresh_const("x");
+
+	let area = &x * &x + &y * &y;
+	solver.assert(area.eq(25));
+
+	println!("{solver:?}");
+
+	for (idx, (x,y)) in solver.solutions((x,y), true).enumerate() {
+		let x = x.as_i64().unwrap();
+		let y = y.as_i64().unwrap();
+		println!("; {}:\t{x:>2},{y:?2} ", idx + 1);
+	}
+}
+```
+
+```smt2
+(declare-fun x!1 () Int)
+(declare-fun x!0 () Int)
+(assert (= (+ (* x!0 x!0) (* x!1 x!1)) 25))
+
+; 1:	 0, 5
+; 2:	-5, 0
+; 3:	-3,-4
+; 4:	-4,-3
+; 5:	 0,-5
+; 6:	 3,-4
+; 7:	 4,-3
+; 8:	 5, 0
+; 9:	 3, 4
+; 10:	 4, 3
+; 11:	-3, 4
+; 12:	-4, 3
+```
+
+This goes without saying, but if I used the `Real` type in this example it would generate infinite solutions.
+
+---
+
+## Coin Change Problem
+
+The Coin Change problem is a simple one: given a list of denominations and a total, find the smallest number of coins that add up to said total. Emphasis on _smallest_. Unlike previous problems, this is an optimizatin problem. We are looking for a solution that satisfies specific criteria instead of just _a_ solution. Conventiently enough, `z3` provides an `Optimize` object which we can use to optimize.
+
+Let us set up the parameters of the problem in plain language. The denominations we have are 1, 5, and 10. We need to give 37 money in the least amount of coins. This is simple enough that we can know the solution is three 10 coins, one 5 coin, and two 1 coins. Let's see if we can get the same result. As usual, code followed by output:
+
+```rust
+use z3::{Optimize, ast::Int};
+fn main() {
+	let opt = Optimize::new();
+
+	let c1 = Int::new_const("c1");
+	let c5 = Int::new_const("c5");
+	let c10 = Int::new_const("c10");
+
+	let total = (&c1 * 1) + (&c5 * 5) + (&c10 * 10);
+	let count = &c1 + &c5 + &c10;
+
+	opt.assert(&total.eq(37));
+	opt.minimize(&count);
+
+	println!("{opt:?}");
+
+	if let z3::SatResult::Sat = opt.check(&[]) {
+		let model = opt.get_model().unwrap();
+		let c1 = model.eval(&c1, true).unwrap();
+		let c5 = model.eval(&c5, true).unwrap();
+		let c10 = model.eval(&c10, true).unwrap();
+
+		println!("; c1: {c1:?}, c5: {c5:?}, c10: {c10:?}");
+	} else {
+		println!("; woe for us");
+	}
+}
+```
+
+```smt2
+(declare-fun c10 () Int)
+(declare-fun c5 () Int)
+(declare-fun c1 () Int)
+(assert (= (+ (* c1 1) (* c5 5) (* c10 10)) 37))
+(minimize (+ c1 c5 c10))
+(check-sat)
+
+; c1: 37, c5: 0, c10: 0
+```
+
+Oops. This cannot be right.
+
+I do not really understand why the answer is so nonsensical here. The problem is that `Int` really spans the entire natural integers range, so it is accounting for negative amounts of coins. This still does not explain how the optimal solution given is 37 coins. (If you can explain, please let me know.)
+
+The solution for this[^mystery] is to constrain the amount of coins to be non-negative. So let's do that. Add these assertions somewhere before `check`, and Bob's your uncle.
+
+[^mystery]: Again, for reasons I do not understand.
+
+```rust
+opt.assert(&c1.ge(0));
+opt.assert(&c5.ge(0));
+opt.assert(&c10.ge(0));
+```
+
+```smt2
+(declare-fun c1 () Int)
+(declare-fun c5 () Int)
+(declare-fun c10 () Int)
+(assert (>= c1 0))
+(assert (>= c5 0))
+(assert (>= c10 0))
+(assert (= (+ (* c1 1) (* c5 5) (* c10 10)) 37))
+(minimize (+ c1 c5 c10))
+(check-sat)
+
+; c1: 2, c5: 1, c10: 3
+```
+
+That's more like it.  Now let's try with different denominations. Something like 10. 9, and 1. Note that the optimal solution for 37 would be: one 10 coin, three 9 coins, and no 1 coins. The greedy solution would fail to catch that. Here is the output of printing the optimizer and the result.
+
+```smt2
+(declare-fun c1 () Int)
+(declare-fun c9 () Int)
+(declare-fun c10 () Int)
+(assert (>= c1 0))
+(assert (>= c9 0))
+(assert (>= c10 0))
+(assert (= (+ (* c1 1) (* c9 9) (* c10 10)) 37))
+(minimize (+ c1 c9 c10))
+(check-sat)
+
+; c1: 0, c9: 3, c10: 1
+```
+
+Success!
+
+## `push` and `pop`
+
+Currently, the total 37 is hardcoded. But what if I want the answers for a number of different totals? Thankfully, you do not need to build the optimizer from scratch for every total. Instead, use the magical functions `push` and `pop`. The first one essentially creates a book mark in the stack of assertions. The second removes everything above said bookmark, and the bookmark. It is simple really. Here are the solutions from 30 to 39, because why not.
+
+Here is the full `main`. I will spare you the output.
+
+```rust
+let opt = Optimize::new();
+
+let c1 = Int::new_const("c1");
+let c9 = Int::new_const("c9");
+let c10 = Int::new_const("c10");
+
+opt.assert(&c1.ge(0));
+opt.assert(&c9.ge(0));
+opt.assert(&c10.ge(0));
+
+let total = (&c1 * 1) + (&c9 * 9) + (&c10 * 10);
+let count = &c1 + &c9 + &c10;
+
+opt.minimize(&count);
+
+println!("; total\tcount\tc1\tc9\tc10");
+
+for t in (30u32..).take(10) {
+	print!("; {t}\t");
+
+	opt.push();
+
+	opt.assert(&total.eq(t));
+
+	if let SatResult::Sat = opt.check(&[]) {
+		let model = opt.get_model().unwrap();
+		let c1 = model.eval(&c1, true).unwrap().as_u64().unwrap();
+		let c9 = model.eval(&c9, true).unwrap().as_u64().unwrap();
+		let c10 = model.eval(&c10, true).unwrap().as_u64().unwrap();
+
+		let count = c1 + c9 + c10;
+
+		println!("{count}\t{c1:?}\t{c9:?}\t{c10:?}");
+	} else {
+		println!("; woe for us");
+	}
+
+	opt.pop(); // no RAII for you
+}
+```
+
+Note that the `push` and `pop` API is available for `Solver` as well. At any rate, back to solving.
 
 ---
