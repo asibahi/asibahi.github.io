@@ -439,3 +439,109 @@ for t in (30u32..).take(10) {
 Note that the `push` and `pop` API is available for `Solver` as well. At any rate, back to solving.
 
 ---
+
+## Sudoku
+
+This is a significant jump in complexity, so bear with me. We are going to solve a Sudoku.[^js] So let's write the constraints first. We can use Rust's arrays or `Vec` to organize our `z3.Int`s and check their constraints. First, this is the puzzle we are solving:
+
+[^js]: This example is translated from [The `z3` Guide](https://microsoft.github.io/z3guide/programming/Z3%20JavaScript%20Examples#solve-sudoku)
+
+```
+....94.3.
+...51...7
+.89....4.
+......2.8
+.6.2.1.5.
+1.2......
+.7....52.
+9...65...
+.4.97....
+```
+
+I will forgo the steps to turn that into a `[[Option<u8>;9];9]`. Instead the code below will get that info from a `get_puzzle()` function.
+
+```rust
+let solver = Solver::new();
+
+// Note that we're using Rust arrays here. The solver does not really know about them.
+let grid: [[_; 9]; 9] =
+	array::from_fn(|i| array::from_fn(|j| Int::new_const(format!("x{i}{j}"))));
+
+// each cell contains a value 1<=x<=9
+grid.iter().flatten().for_each(|i| {
+	solver.assert(i.ge(1) & i.le(9));
+});
+
+// each row contains a digit only once
+for row in &grid {
+	solver.assert(Ast::distinct(row));
+}
+
+// each column contains a digit only once
+for idx in 0..9 {
+	let mut col = Vec::with_capacity(9);
+	grid.iter().for_each(|r| col.push(r[idx].clone()));
+	solver.assert(Ast::distinct(&col))
+}
+
+// each 3x3 contains a digit at most once
+for x_s in (0..9).step_by(3) {
+	for y_s in (0..9).step_by(3) {
+		let mut square = Vec::with_capacity(9);
+		for x in (x_s..).take(3) {
+			for y in (y_s..).take(3) {
+				// very nested loop
+				square.push(grid[x][y].clone());
+			}
+		}
+
+		solver.assert(Ast::distinct(&square))
+	}
+}
+
+// Finally, assert that each cell equals a provided clue in the given puzzle
+get_puzzle().iter().flatten().zip(grid.iter().flatten()).for_each(|(clue, variable)| {
+	if let Some(clue) = clue {
+		solver.assert(variable.eq(*clue));
+	}
+});
+
+eprintln!("{solver:?}");
+```
+
+Printing the solver after each step lets you debug whether you have your constraints correctly. The printout is over 200 lines long, so let's skip that. All we have to do next is to check the value of each cell in `grid`.
+
+```rust
+if let SatResult::Sat = solver.check() {
+	let model = solver.get_model().unwrap();
+	for row in grid {
+		for int in row {
+			let result = model.eval(&int, true).unwrap();
+			print!("{result:?}");
+		}
+		println!();
+	}
+} else {
+	println!("Unsolvable")
+}
+```
+
+And this prints out the result. You can verify for yourself whether this is correct or not. Maybe try other puzzles. Or add more constraints. [You can even try the Miracle Sudoku](https://www.youtube.com/watch?v=yKf9aUIxdb4).
+
+```
+715894632
+234516897
+689723145
+493657218
+867231954
+152489763
+376148529
+928365471
+541972386
+```
+
+One thing of note here: which is how *dumb* the solver is. Note that if you print out the solver, there is no notion of rows and columns and squares. It does not know any Sudoku tricks like X-wings and what have you. All the data is organized on the Rust side of things, and what is given to the solver is "these two variables cannot be the same" over and over and over again. And it just .. tells you what the rest of them are.
+
+Another thing that is not obvious at first glance, is that it does not check if there is a unique solution. The puzzle may be badly constructed and have multiple solutions, and it will happily give you one, or two, or how many you ask for. It does, howver, check if it is unsolvable!
+
+---
