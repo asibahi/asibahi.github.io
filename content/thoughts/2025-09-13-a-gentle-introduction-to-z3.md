@@ -1,8 +1,7 @@
 +++
-title = "A Gentle Introduction to z3"
+title = "A Dumb Introduction to z3"
 description = "Exploring the world of constraint solvers with very simple examples."
-date = 2025-09-13
-draft = true
+date = 2025-09-15
 +++
 
 Recently I have come across a nice article: [Many Hard Leetcode Problems are Easy Constraint Problems](https://buttondown.com/hillelwayne/archive/many-hard-leetcode-problems-are-easy-constraint/), and I figured, I really should learn how to use these things! What else do I really have to do? I have had use for solvers (or as they are commonly called: theorem provers) [In a previous article](@/thoughts/2024-10-17-the-hanging-gardens-problem/index.md), but then I tried to prove the things with good old algorithms. I looked at `z3` at the time, but found the whole concept a bit too opaque. Now however, it seemed a bit easier to get into.
@@ -543,5 +542,93 @@ And this prints out the result. You can verify for yourself whether this is corr
 One thing of note here: which is how *dumb* the solver is. Note that if you print out the solver, there is no notion of rows and columns and squares. It does not know any Sudoku tricks like X-wings and what have you. All the data is organized on the Rust side of things, and what is given to the solver is "these two variables cannot be the same" over and over and over again. And it just .. tells you what the rest of them are.
 
 Another thing that is not obvious at first glance, is that it does not check if there is a unique solution. The puzzle may be badly constructed and have multiple solutions, and it will happily give you one, or two, or how many you ask for. It does, howver, check if it is unsolvable!
+
+---
+
+## Page Layout
+
+One of the famous examples of using solvers in production is .. layouting. You have a number of elements and you want to arrange them on a page, or a bowser window, or whatever. So let's do a rudimentary version of that.[^simon]
+
+[^simon]: [I got the suggestion for from Simon Cozens](https://typo.social/@simoncozens/115197804741172296). Admittedly, implementation of this section was aided by a Robot.
+
+The page we are layouting has an arbitrary size of 190mm width by 270mm tall. We are to put three boxes on the page of varying sizes and rules. I am just spitballing the sizes here: first box is 105mm by 140mm; second is 85 by 135, third is 120 by 110. They should not overlap, and like .. that's it?
+
+```rust
+let page_width = 190;
+let page_height = 270;
+
+let solver = Solver::new();
+
+let box_dims = [(105, 140), (85, 135), (120, 110)];
+let box_locs = box_dims.map(|b| {
+	let left = Int::fresh_const("x");
+	let top = Int::fresh_const("y");
+
+	let right = &left + b.0;
+	let bottom = &top + b.1;
+
+	// assert the boxes fit within the pagge
+	solver.assert(&left.ge(0));
+	solver.assert(&top.ge(0));
+
+	solver.assert(&right.le(page_width));
+	solver.assert(&bottom.le(page_height));
+
+	// assert each box aligns to lines. line height is 10mm
+	solver.assert(&bottom.rem(10).eq(0));
+
+	(left, top, right, bottom)
+});
+
+// assert boxes do not overlap
+for i in 0..box_locs.len() {
+	for j in i + 1..box_locs.len() {
+		let fst_box = &box_locs[i];
+		let snd_box = &box_locs[j];
+		// tuple structure: (left, top, right, bottom)
+		let cond_1 = fst_box.0.ge(&snd_box.2); // fst left >= snd right
+		let cond_2 = fst_box.1.ge(&snd_box.3); // fst top >= snf bottom
+		let cond_3 = fst_box.2.le(&snd_box.0); // fst right <= snd left
+		let cond_4 = fst_box.3.le(&snd_box.1); // fst bottom <= snd top
+		solver.assert(Bool::or(&[cond_1, cond_2, cond_3, cond_4]));
+	}
+}
+
+// println!("{solver:?}");
+
+if let SatResult::Sat = solver.check() {
+	let model = solver.get_model().unwrap();
+	println!("{model:?}");
+
+	for (idx, b) in box_locs.into_iter().enumerate() {
+		print!("box {}\t", idx + 1);
+		let left = model.eval(&b.0, true).unwrap();
+		let top = model.eval(&b.1, true).unwrap();
+		println!("{left}, {top}");
+	}
+} else {
+	println!("Unsolvable");
+}
+```
+
+This prints out this neat solution:
+
+```
+box 1	85, 0, 190, 140
+box 2	0, 5, 85, 140
+box 3	0, 140, 120, 250
+```
+
+Turned out easier than I thought. Hah.
+
+---
+
+## Epilogue
+
+Obviously, all these examples are rather simple. Figuring out how to model the problem in the form of boolean rules and constraints is almost all the challenge. There are some limitations, too: `z3` cannot solve equations of the sort `2^x == 3`; it cannot call external functions to get values (though there are ways to work around that).
+
+There is plenty of stuff I have not shown. `Array`s, which are nothing like programming language arrays and more mappings from one domain to another. `BV`, bit vectors, which allow bitwise operations on their values like `and` and `or` and bit shifting. (Which are the key to solving [the Hanging Gardens Problem](@/thoughts/2024-10-17-the-hanging-gardens-problem/index.md).) `Set`s and `Seq`s and `String`s and regexes and stuff I have not really looked into. Unfortunately, most resources on the web are a bit heavy on theory, and are not targeted to stupid coders like myself.
+
+Until later.
 
 ---
