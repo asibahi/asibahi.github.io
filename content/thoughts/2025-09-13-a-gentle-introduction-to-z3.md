@@ -6,7 +6,7 @@ date = 2025-09-15
 
 Recently I have come across a nice article: [Many Hard Leetcode Problems are Easy Constraint Problems](https://buttondown.com/hillelwayne/archive/many-hard-leetcode-problems-are-easy-constraint/), and I figured, I really should learn how to use these things! What else do I really have to do? I have had use for solvers (or as they are commonly called: theorem provers) [In a previous article](@/thoughts/2024-10-17-the-hanging-gardens-problem/index.md), but then I tried to prove the things with good old algorithms. I looked at `z3` at the time, but found the whole concept a bit too opaque. Now however, it seemed a bit easier to get into.
 
-To be clear, as of writing these words, I have only been looking at `z3` reading mateiral for two days. I am in no way an expert, and I have not written anything more complex than a solver for the change counter problem (the first example in the article listed above). So I am writing this really knowing nothing about the underlying theory, theorem provers, or whatever the hell "unificaion" is. There is a good chance you know more about this than I do.
+To be clear, as of writing these words, I have only been looking at `z3` reading material for two days. I am in no way an expert, and I have not written anything more complex than a solver for the change counter problem (the first example in the article listed above). So I am writing this really knowing nothing about the underlying theory, theorem provers, or whatever the hell "unification" is. There is a good chance you know more about this than I do.
 
 There are `z3` bindings in many popular languages. I will be using [`z3`'s Rust bindings](https://docs.rs/z3/latest/z3/), because I am more comfortable in Rust than, say, Python or JavaScript. The examples I worked with to understand `z3` however, can be found in two nice documents:
 
@@ -27,13 +27,13 @@ On that note, you might wonder: why did I go with `z3` when MiniZinc has a more 
 
 Documentation on `z3` and its API use a lot of jargon,[^jargon] which makes the whole thing really difficult to wade into without a previous background. I will explain things as I understand when I get to them, but two things really stand out.
 
-[^jargon]: Domain specific termonology.
+[^jargon]: Domain specific terminology.
 
 The first is the word `Sort`. You see this in the context of arrays and function declarations (we will get to those, I hope). But it has nothing to do with .. well .. sorting. `Sort` is just the jargon word for _types_.
 
-The second one is **constands**. They are not what a normal person would call constants: they are actually the knobs the solvers use to solve problems. There are two types of contants: _free_, which are what one would call variables; and _interpreted_, which is when you'd type an integer literal and clever type machinations turns it into a coonstant in the solver.
+The second one is **constants**. They are not what a normal person would call constants: they are actually the knobs the solvers use to solve problems. There are two types of constants: _free_, which are what one would call variables; and _interpreted_, which is when you'd type an integer literal and clever type machinations turns it into a constant in the solver.
 
-Note that also solvers do not work within the regular type system of the programming anguage. They have their own types (sorry, sorts), and operations that may or may not map nicely to the language's types and operations. Much of the actual code you are writing is about expressing things in the target solver's language. `z3` uses a language called "SMT-LIB2" (henceforth called `smt2`), apparently. And you can actually write your constraints immediately in said language and have the library consume it. Much of what the bindings is take your code and translate internally to this language before feeding it to the solver.[^dsl]
+Note that also solvers do not work within the regular type system of the programming language. They have their own types (sorry, sorts), and operations that may or may not map nicely to the language's types and operations. Much of the actual code you are writing is about expressing things in the target solver's language. `z3` uses a language called "SMT-LIB2" (henceforth called `smt2`), apparently. And you can actually write your constraints immediately in said language and have the library consume it. Much of what the bindings is take your code and translate internally to this language before feeding it to the solver.[^dsl]
 
 [^dsl]: Probably not true. For all I know the C API constructs the model directly without the intermediate step. However, I found it much easier to understand them in this manner.
 
@@ -213,7 +213,7 @@ As I am sure you know from your high school math, some equations have multiple s
 x * x = 4
 ```
 
-The Rust bindings have a nice method for getting multiple solutions out of a solver, simple called `solutions`. It works similarly to `model.eval()` above, and takes the same paramaters with the same output. Here is the complete program. (I am going back to `Int` because I am not cool enough for `Real` numbers.)
+The Rust bindings have a nice method for getting multiple solutions out of a solver, simply called `solutions`. It works similarly to `model.eval()` above, and takes the same parameters with the same output. Here is the complete program. (I am going back to `Int` because I am not cool enough for `Real` numbers.)
 
 ```rust
 use z3::{Solver, ast::Int};
@@ -296,7 +296,7 @@ This goes without saying, but if I used the `Real` type in this example it would
 
 ## Coin Change Problem
 
-The Coin Change problem is a simple one: given a list of denominations and a total, find the smallest number of coins that add up to said total. Emphasis on _smallest_. Unlike previous problems, this is an optimizatin problem. We are looking for a solution that satisfies specific criteria instead of just _a_ solution. Conventiently enough, `z3` provides an `Optimize` object which we can use to optimize.
+The Coin Change problem is a simple one: given a list of denominations and a total, find the smallest number of coins that add up to said total. Emphasis on _smallest_. Unlike previous problems, this is an optimization problem. We are looking for a solution that satisfies specific criteria instead of just _a_ solution. Conveniently enough, `z3` provides an `Optimize` object which we can use to optimize.
 
 Let us set up the parameters of the problem in plain language. The denominations we have are 1, 5, and 10. We need to give 37 money in the least amount of coins. This is simple enough that we can know the solution is three 10 coins, one 5 coin, and two 1 coins. Let's see if we can get the same result. As usual, code followed by output:
 
@@ -389,7 +389,7 @@ Success!
 
 ## `push` and `pop`
 
-Currently, the total 37 is hardcoded. But what if I want the answers for a number of different totals? Thankfully, you do not need to build the optimizer from scratch for every total. Instead, use the magical functions `push` and `pop`. The first one essentially creates a book mark in the stack of assertions. The second removes everything above said bookmark, and the bookmark. It is simple really. Here are the solutions from 30 to 39, because why not.
+Currently, the total 37 is hardcoded. But what if I want the answers for a number of different totals? Thankfully, you do not need to build the optimizer from scratch for every total. Instead, use the magical functions `push` and `pop`. The first one essentially creates a bookmark in the stack of assertions. The second removes everything above said bookmark, and the bookmark. It is simple really. Here are the solutions from 30 to 39, because why not.
 
 Here is the full `main`. I will spare you the output.
 
@@ -541,15 +541,15 @@ And this prints out the result. You can verify for yourself whether this is corr
 
 One thing of note here: which is how *dumb* the solver is. Note that if you print out the solver, there is no notion of rows and columns and squares. It does not know any Sudoku tricks like X-wings and what have you. All the data is organized on the Rust side of things, and what is given to the solver is "these two variables cannot be the same" over and over and over again. And it just .. tells you what the rest of them are.
 
-Another thing that is not obvious at first glance, is that it does not check if there is a unique solution. The puzzle may be badly constructed and have multiple solutions, and it will happily give you one, or two, or how many you ask for. It does, howver, check if it is unsolvable!
+Another thing that is not obvious at first glance, is that it does not check if there is a unique solution. The puzzle may be badly constructed and have multiple solutions, and it will happily give you one, or two, or how many you ask for. It does, however, check if it is unsolvable!
 
 ---
 
 ## Page Layout
 
-One of the famous examples of using solvers in production is .. layouting. You have a number of elements and you want to arrange them on a page, or a bowser window, or whatever. So let's do a rudimentary version of that.[^simon]
+One of the famous examples of using solvers in production is .. layouting. You have a number of elements and you want to arrange them on a page, or a browser window, or whatever. So let's do a rudimentary version of that.[^simon]
 
-[^simon]: [I got the suggestion for from Simon Cozens](https://typo.social/@simoncozens/115197804741172296). Admittedly, implementation of this section was aided by a Robot.
+[^simon]: [I got the suggestion for this from Simon Cozens](https://typo.social/@simoncozens/115197804741172296). Admittedly, implementation of this section was aided by a Robot.
 
 The page we are layouting has an arbitrary size of 190mm width by 270mm tall. We are to put three boxes on the page of varying sizes and rules. I am just spitballing the sizes here: first box is 105mm by 140mm; second is 85 by 135, third is 120 by 110. They should not overlap, and like .. that's it?
 
@@ -567,7 +567,7 @@ let box_locs = box_dims.map(|b| {
 	let right = &left + b.0;
 	let bottom = &top + b.1;
 
-	// assert the boxes fit within the pagge
+	// assert the boxes fit within the page
 	solver.assert(&left.ge(0));
 	solver.assert(&top.ge(0));
 
@@ -587,7 +587,7 @@ for i in 0..box_locs.len() {
 		let snd_box = &box_locs[j];
 		// tuple structure: (left, top, right, bottom)
 		let cond_1 = fst_box.0.ge(&snd_box.2); // fst left >= snd right
-		let cond_2 = fst_box.1.ge(&snd_box.3); // fst top >= snf bottom
+		let cond_2 = fst_box.1.ge(&snd_box.3); // fst top >= snd bottom
 		let cond_3 = fst_box.2.le(&snd_box.0); // fst right <= snd left
 		let cond_4 = fst_box.3.le(&snd_box.1); // fst bottom <= snd top
 		solver.assert(Bool::or(&[cond_1, cond_2, cond_3, cond_4]));
@@ -598,13 +598,14 @@ for i in 0..box_locs.len() {
 
 if let SatResult::Sat = solver.check() {
 	let model = solver.get_model().unwrap();
-	println!("{model:?}");
 
 	for (idx, b) in box_locs.into_iter().enumerate() {
 		print!("box {}\t", idx + 1);
 		let left = model.eval(&b.0, true).unwrap();
 		let top = model.eval(&b.1, true).unwrap();
-		println!("{left}, {top}");
+		let right = model.eval(&b.2, true).unwrap();
+		let bottom = model.eval(&b.3, true).unwrap();
+		println!("{left}, {top}, {right}, {bottom}");
 	}
 } else {
 	println!("Unsolvable");
