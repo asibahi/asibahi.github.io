@@ -22,24 +22,24 @@ const Q: &str = r#"fn main() {
 
 ## Zig
 
-This one is fairly longwinded due to Zig's otherwise very nice multiline string literals syntax. Passes `zig fmt`.
+This one is fairly longwinded due to Zig's otherwise very nice multiline string literals syntax. Passes `zig fmt`. This works for 0.15.1.
 
 ```zig
 pub fn main() !void {
-    try o.print("{s}\nconst Q =\n", .{Q});
+    try o.interface.print("{s}\nconst Q =\n", .{Q});
     var it = @import("std").mem.splitScalar(u8, Q, '\n');
-    while (it.next()) |l| try o.print("    \\\\{s}\n", .{l});
-    try o.writeAll(";\nconst o = @import(\"std\").io.getStdOut().writer();\n");
+    while (it.next()) |l| try o.interface.print("    \\\\{s}\n", .{l});
+    try o.interface.writeAll(";\nvar o = @import(\"std\").fs.File.stdout().writer(&.{});\n");
 }
 const Q =
     \\pub fn main() !void {
-    \\    try o.print("{s}\nconst Q =\n", .{Q});
+    \\    try o.interface.print("{s}\nconst Q =\n", .{Q});
     \\    var it = @import("std").mem.splitScalar(u8, Q, '\n');
-    \\    while (it.next()) |l| try o.print("    \\\\{s}\n", .{l});
-    \\    try o.writeAll(";\nconst o = @import(\"std\").io.getStdOut().writer();\n");
+    \\    while (it.next()) |l| try o.interface.print("    \\\\{s}\n", .{l});
+    \\    try o.interface.writeAll(";\nvar o = @import(\"std\").fs.File.stdout().writer(&.{});\n");
     \\}
 ;
-const o = @import("std").io.getStdOut().writer();
+var o = @import("std").fs.File.stdout().writer(&.{});
 ```
 
 ## Swift
