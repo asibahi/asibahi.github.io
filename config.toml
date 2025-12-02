@@ -1,4 +1,4 @@
-base_url = "https://asibahi.github.io/"
+base_url = "https://blog.ar-ms.me/"
 
 compile_sass = true
 build_search_index = false
@@ -23,6 +23,6 @@ links = [
     { title = "Twitter", href = "https://x.com/@asibahi" },
     # { title = "Instagram", href = "https://www.instagram.com/asibahi" },
     { title = "typo.social", href = "https://typo.social/@asibahi" },
-    { title = "GitHub", href = "https://github.com/asibahi" },
-    { title = "SourceHut", href = "https://sr.ht/~asibahi/"}
+    { title = "SourceHut", href = "https://sr.ht/~asibahi/"},
+    { title = "GitHub", href = "https://github.com/asibahi" }
 ]
