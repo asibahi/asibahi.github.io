@@ -1,0 +1,637 @@
+<!doctype html>
+<html  dir="ltr" >
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Musings"
+		/>
+		<title>Abdul Rahman Sibahi | Writing a C Compiler, Chapter 4, in Zig</title>
+		<link rel="stylesheet" href="https://blog.ar-ms.me/style.css?h=5e9f4e540307a223aec7" />
+	</head>
+
+	<body>
+
+		This website has moved to <a href="http://blog.ar-ms.me/">blog.ar-ms.me</a>. No further content will be published on the  <a href="https://www.un.org/unispal/document/a-hrc-59-23-from-economy-of-occupation-to-economy-of-genocide-report-special-rapporteur-francesca-albanese-palestine-2025/">Github</a> hosted version.
+
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			
+	<header class="space">
+		<a href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;"> ⏏️ </a>
+
+		
+			<h1>Writing a C Compiler, Chapter 4, in Zig</h1>
+			
+
+			<nav>
+				
+					<p class="secondary">2025-05-19</p>
+				 
+				<details class="secondary">
+					<summary> Contents </summary>
+					<ul>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c4/#lexer">Lexer</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c4/#parser">Parser</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c4/#unit-tests">Unit Tests</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c4/#internal-representation">Internal Representation</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c4/#assembly-generation">Assembly Generation</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c4/#lessons-learned">Lessons Learned</a>
+							
+						</li>
+						
+					</ul>
+				</details>
+				
+			</nav>
+		
+	</header>
+
+			
+			
+	<main><p><a href="https://blog.ar-ms.me/paella/c3/">Three chapters</a> out of who knows from <a href="https://norasandler.com/2022/03/29/Write-a-C-Compiler-the-Book.html">Writing a C Compiler</a>. Time onto Chapter 4. Chapter 4 is about, let me check, "logical and relational operators". Great. More operators.</p>
+<hr />
+<h2 id="lexer">Lexer</h2>
+<p>You would expect the lexer by now to be a boring done deal, and you would be right. However, this is <em>slightly</em> more interesting because I get to add more states to the state machine!</p>
+<p>The tokens for today are the following: <code>!</code>, <code>&amp;&amp;</code>, <code>||</code>, <code>==</code>, <code>!=</code>, <code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, and <code>&gt;=</code>. As I am not supporting bitshift operations, I will consider those tokens (specifically <code>&amp;</code> and <code>|</code>) a failure state. The tests will not have them, either way.</p>
+<p>Adding the token tags is straightforward. The <code>State</code> enum however, should have a new state for every partial application. This is the new <code>State</code>:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const </span><span>State </span><span style="font-weight:bold;color:#a71d5d;">= enum </span><span>{
+</span><span>    start,
+</span><span>    identifier,
+</span><span>    int,
+</span><span>    hyphen,
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// new
+</span><span>    bang,
+</span><span>    ambersand,
+</span><span>    pipe,
+</span><span>    equals,
+</span><span>    lesser_than,
+</span><span>    greater_than,
+</span><span>};
+</span></code></pre>
+<p>The character in which the tokenizer enters these states is, I think, self explanatory. This, for example, is <code>pipe</code>, and <code>lesser_than</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.start </span><span style="font-weight:bold;color:#a71d5d;">=&gt; switch </span><span>(self.buffer[self.index]) {
+</span><span>    </span><span style="font-style:italic;color:#969896;">// snip --
+</span><span>    </span><span style="color:#183691;">&#39;|&#39; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; continue</span><span> :state</span><span style="color:#0086b3;"> .pipe</span><span>,
+</span><span>    </span><span style="color:#183691;">&#39;&lt;&#39; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; continue</span><span> :state</span><span style="color:#0086b3;"> .lesser_than</span><span>,
+</span><span>    </span><span style="font-style:italic;color:#969896;">// snip --
+</span><span>],
+</span><span style="color:#0086b3;">.pipe </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>    self.index </span><span style="font-weight:bold;color:#a71d5d;">+= </span><span style="color:#0086b3;">1</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(self.buffer[self.index]) {
+</span><span>        </span><span style="color:#183691;">&#39;|&#39; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            self.index </span><span style="font-weight:bold;color:#a71d5d;">+= </span><span style="color:#0086b3;">1</span><span>;
+</span><span>            result.tag </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .double_pipe</span><span>;
+</span><span>        },
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt;</span><span> result.tag </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .invalid</span><span>,
+</span><span>    }
+</span><span>},
+</span><span style="color:#0086b3;">.lesser_than </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>    self.index </span><span style="font-weight:bold;color:#a71d5d;">+= </span><span style="color:#0086b3;">1</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(self.buffer[self.index]) {
+</span><span>        </span><span style="color:#183691;">&#39;=&#39; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            self.index </span><span style="font-weight:bold;color:#a71d5d;">+= </span><span style="color:#0086b3;">1</span><span>;
+</span><span>            result.tag </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .lesser_equals</span><span>;
+</span><span>        },
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt;</span><span> result.tag </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .lesser_then</span><span>,
+</span><span>    }
+</span><span>},
+</span></code></pre>
+<h2 id="parser">Parser</h2>
+<p>The parser is a relatively simpler affair. More binary operations with different precedence levels. None of them are right associative, so nothing but updating the AST and the various <code>switch</code> statements. Nothing much to write about.</p>
+<h2 id="unit-tests">Unit Tests</h2>
+<p>To spice up this section, I have decided to take on writing unit tests for the parser. Zig has first class support for unit tests. Make a block titled <code>test</code> and the compiler sees it. The only problem is hooking it in the build system.</p>
+<p>Back in chapter 2, I think, I rejigged the <code>zig build test</code> command to run the Book's test suite. As in, it just compiles and installs the binary as normal, then runs a shell command. Zig's built in testing support requires a different kind of wiring.</p>
+<p>Thankfully, the default output with <code>zig init</code> contains all the necessary pieces, I can reuse those. One question remains is whether to tie them to the suit's test suite, so both run with <code>zig build test</code>, or have it a separate command. I believe having it a separate command is best, to cut down on the, already slow, testing time.</p>
+<p>I shall change the existing <code>test</code> command to <code>submit</code> (so I'd type <code>zig build submit</code>), and have the <code>test</code> command for unit tests. For reference, this is the old step after changing the name. (The block is organizational).</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>{ </span><span style="font-style:italic;color:#969896;">// `zig build submit` command
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> test_step </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.step(</span><span style="color:#183691;">&quot;submit&quot;</span><span>, </span><span style="color:#183691;">&quot;Run the Book&#39;s test suite&quot;</span><span>);
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// subshells. how do they work.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> inner_command </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> std.mem.join(b.allocator, </span><span style="color:#183691;">&quot; &quot;</span><span>, &amp;.{
+</span><span>        </span><span style="color:#183691;">&quot;../writing-a-c-compiler-tests/test_compiler&quot;</span><span>,
+</span><span>        b.pathJoin(&amp;.{ b.exe_dir, </span><span style="color:#183691;">&quot;paella&quot; </span><span>}),
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> std.mem.join(
+</span><span>            b.allocator,
+</span><span>            </span><span style="color:#183691;">&quot; &quot;</span><span>,
+</span><span>            b.args </span><span style="font-weight:bold;color:#a71d5d;">orelse</span><span> &amp;.{</span><span style="color:#183691;">&quot;&quot;</span><span>},
+</span><span>        ),
+</span><span>    });
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// does this work like i think it does?
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> test_command </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.addSystemCommand(
+</span><span>        &amp;.{ </span><span style="color:#183691;">&quot;arch&quot;</span><span>, </span><span style="color:#183691;">&quot;-x86_64&quot;</span><span>, </span><span style="color:#183691;">&quot;zsh&quot;</span><span>, </span><span style="color:#183691;">&quot;-c&quot;</span><span>, inner_command },
+</span><span>    );
+</span><span>
+</span><span>    test_command.step.dependOn(b.getInstallStep());
+</span><span>    test_step.dependOn(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>test_command.step);
+</span><span>}
+</span></code></pre>
+<p>Copying from the default <code>build.zig</code> and trimming unnecessary things, I get this:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>{ </span><span style="font-style:italic;color:#969896;">// `zig build test` command
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> test_step </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.step(</span><span style="color:#183691;">&quot;test&quot;</span><span>, </span><span style="color:#183691;">&quot;Run unit tests&quot;</span><span>);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> exe_unit_tests </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.addTest(.{
+</span><span>        .root_module </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> exe_mod,
+</span><span>    });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> run_exe_unit_tests </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.addRunArtifact(exe_unit_tests);
+</span><span>
+</span><span>    test_step.dependOn(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>run_exe_unit_tests.step);
+</span><span>}
+</span></code></pre>
+<p>And .. that should be it? To test whether the test command run, I shall write a <code>test</code> to test whether 2 + 2 equals 4 in <code>main.zig</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">test </span><span style="color:#183691;">&quot;test the test&quot; </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> std.testing.expect(</span><span style="color:#0086b3;">2 </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">2 </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">4</span><span>);
+</span><span>}
+</span></code></pre>
+<p>Ok <code>zig build test</code> comes and goes and says nothing. Let's see if it can detect a failure. I shall expect 2 + 2 does not equal 4.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">test </span><span style="color:#183691;">&quot;test the test&quot; </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> std.testing.expect(</span><span style="color:#0086b3;">2 </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">2 </span><span style="font-weight:bold;color:#a71d5d;">!= </span><span style="color:#0086b3;">4</span><span>);
+</span><span>}
+</span></code></pre>
+<p>And it fails. So our tests work! Putting it <code>parser.zig</code> however, does not seem to work. Tests pass no matter what I expect. What gives?</p>
+<p>After asking around in the Zig discord, this is a known thing. Zig's compiler is lazy, and does not look at functions not referenced from <code>main.zig</code>. But because the test executable does <em>not</em> run <code>fn main</code>, it does <em>not</em> see any modules that are referenced within <code>main.zig</code> but not referenced in <code>main.zig</code>'s <em>tests</em>.</p>
+<p>It is dumb as fuck, if you ask me. And honestly I cannot tell if this is a deliberate design decision or just a known bug. The solution is, well, to write a <code>test</code> block in <code>main.zig</code> that references the files in which I'd like to run tests.<sup class="footnote-reference" id="fr-language-1"><a href="#fn-language">1</a></sup> The most straightforward way to do this is this:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">test </span><span>{
+</span><span>  std.testing.refAllDeclsRecursive(</span><span style="color:#62a35c;">@This</span><span>());
+</span><span>}
+</span></code></pre>
+<p>And now the tests in <code>parse.zig</code> pass and fail as expected. This is apparently a hack and not recommended. The recommended way is even more stupid looking, which only imports <code>parser.zig</code>, and I'd have to do it for every file and every sub import.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">test </span><span>{
+</span><span>    </span><span style="color:#0086b3;">_ </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> parser;
+</span><span>}
+</span></code></pre>
+<p>Having gone that far, let's actually write our unit test in <code>parse.zig</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">test </span><span style="color:#183691;">&quot;precedence 1&quot; </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> t </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.testing;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#183691;">&quot;3 * 4 + 5;&quot;</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> tokens </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> lexer.Tokenizer.init(src);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> a_a </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.heap.ArenaAllocator.init(t.allocator);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer</span><span> a_a.deinit();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> a </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> a_a.allocator();
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> result </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(a, </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>tokens, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> t.expect(result</span><span style="font-weight:bold;color:#a71d5d;">.* ==</span><span style="color:#0086b3;"> .binop_add</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> t.expectFmt(</span><span style="color:#183691;">&quot;(+ (* 3 4) 5)&quot;</span><span>, </span><span style="color:#183691;">&quot;{}&quot;</span><span>, .{result});
+</span><span>}
+</span></code></pre>
+<p>My first drafts of the test failed because I was leaking memory, hence the adding an arena ceremony. It is a bit more ceremony than I expected, but it is fine. Who needs unit testing anyway? End to end testing is where it is at.</p>
+<hr />
+<h2 id="internal-representation">Internal Representation</h2>
+<p>The IR this chapter is a lot more interesting than usual. Since <code>&amp;&amp;</code> and <code>||</code> are short circuting operators, it means now is the time have jumps and labels and <code>goto</code>s and jump-if-zeros. With conditionals, anything is possible.</p>
+<p>the new instructions are a lot. Here is the new <code>ir.Instr</code>. You will note that there are no direct instructions for <code>and</code> and <code>or</code>.<sup class="footnote-reference" id="fr-tacky-1"><a href="#fn-tacky">2</a></sup></p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Instr </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    ret: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>,
+</span><span>
+</span><span>    copy: </span><span style="font-weight:bold;color:#a71d5d;">Unary</span><span>,
+</span><span>    jump: [:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>    jump_z: </span><span style="font-weight:bold;color:#a71d5d;">JumpIf</span><span>,
+</span><span>    jump_nz: </span><span style="font-weight:bold;color:#a71d5d;">JumpIf</span><span>,
+</span><span>
+</span><span>    label: [:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>
+</span><span>    unop_neg: </span><span style="font-weight:bold;color:#a71d5d;">Unary</span><span>,
+</span><span>    unop_not: </span><span style="font-weight:bold;color:#a71d5d;">Unary</span><span>,
+</span><span>    unop_lnot: </span><span style="font-weight:bold;color:#a71d5d;">Unary</span><span>, </span><span style="font-style:italic;color:#969896;">// &lt;-- new
+</span><span>
+</span><span>    binop_add: </span><span style="font-weight:bold;color:#a71d5d;">Binary</span><span>,
+</span><span>    binop_sub: </span><span style="font-weight:bold;color:#a71d5d;">Binary</span><span>,
+</span><span>    binop_mul: </span><span style="font-weight:bold;color:#a71d5d;">Binary</span><span>,
+</span><span>    binop_div: </span><span style="font-weight:bold;color:#a71d5d;">Binary</span><span>,
+</span><span>    binop_rem: </span><span style="font-weight:bold;color:#a71d5d;">Binary</span><span>,
+</span><span>
+</span><span>    binop_eql: </span><span style="font-weight:bold;color:#a71d5d;">Binary</span><span>,
+</span><span>    binop_neq: </span><span style="font-weight:bold;color:#a71d5d;">Binary</span><span>,
+</span><span>    binop_lt: </span><span style="font-weight:bold;color:#a71d5d;">Binary</span><span>,
+</span><span>    binop_le: </span><span style="font-weight:bold;color:#a71d5d;">Binary</span><span>,
+</span><span>    binop_gt: </span><span style="font-weight:bold;color:#a71d5d;">Binary</span><span>,
+</span><span>    binop_ge: </span><span style="font-weight:bold;color:#a71d5d;">Binary</span><span>,
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Unary </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>        src: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>,
+</span><span>        dst: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>,
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">init</span><span>(src: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>, dst: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>) </span><span style="color:#62a35c;">@This</span><span>() {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .src </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> src, .dst </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> dst };
+</span><span>        }
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Binary </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>        src1: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>,
+</span><span>        src2: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>,
+</span><span>        dst: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>,
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">init</span><span>(src1: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>, src2: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>, dst: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>) </span><span style="color:#62a35c;">@This</span><span>() {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .src1 </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> src1, .src2 </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> src2, .dst </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> dst };
+</span><span>        }
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>JumpIf </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>        cond: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>,
+</span><span>        target: [:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">init</span><span>(cond: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>, target: [:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>) </span><span style="color:#62a35c;">@This</span><span>() {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .cond </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> cond, .target </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> target };
+</span><span>        }
+</span><span>    };
+</span><span>};
+</span></code></pre>
+<p>The <code>jump</code> instruction is straight up <code>goto</code>. <sup class="footnote-reference" id="fr-goto-1"><a href="#fn-goto">3</a></sup> The two conditional jumps simply evaluate their <code>cond</code> operand, and act accordingly. One of them is enough, but it is apparently simpler to do it this way. These conditional jumps are the backbone of <code>&amp;&amp;</code> and <code>||</code>, and the ternary operator come chapter 6.</p>
+<p>The operations other than <code>&amp;&amp;</code> and <code>||</code> have a straightforward impl similar to the previous ones. It is <code>&amp;&amp;</code> and <code>||</code> that depend on the new instructions. This is the implementation of <code>&amp;&amp;</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.binop_and </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>b</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> false_label </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(</span><span style="color:#183691;">&quot;false_and&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> end_label </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(</span><span style="color:#183691;">&quot;end_and&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> result </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(</span><span style="color:#183691;">&quot;dst_and&quot;</span><span>);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src1 </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, b.@</span><span style="color:#183691;">&quot;0&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .jump_z </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(src1, false_label) });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src2 </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, b.@</span><span style="color:#183691;">&quot;1&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .jump_z </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(src2, false_label) });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>dst : </span><span style="font-weight:bold;color:#a71d5d;">ir.Value =</span><span> .{ .variable </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> result };
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .copy </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .constant </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">1 </span><span>},dst ) });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .jump </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> end_label });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .label </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> false_label });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .copy </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .constant </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0 </span><span>}, dst) });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .label </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> end_label });
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> dst;
+</span><span>},
+</span></code></pre>
+<p>Let me walk this one bit by bit, just to make sure I understand it. <code>&amp;&amp;</code> short circuits if the first operand is false, or zero.</p>
+<ol>
+<li>evaluate <code>src1</code>.</li>
+<li>if <code>src1</code> is zero, the result is zero, and we jump to where <code>result</code> is set to zero.</li>
+<li>if not, then we evaluate <code>src2</code>.</li>
+<li>if <code>src2</code> is zero, the result is zero, and we jump to where <code>result</code> is set to zero.</li>
+<li>if not, then the result is one, and we jump to where the <code>result</code> is set to one.</li>
+</ol>
+<p>For <code>||</code> this would be the following:</p>
+<ol>
+<li>evaluate <code>src1</code>.</li>
+<li>if <code>src1</code> is one, the result is one, and we jump to where <code>result</code> is set to one.</li>
+<li>if not, then we evaluate <code>src2</code>.</li>
+<li>if <code>src2</code> is one, the result is one, and we jump to where <code>result</code> is set to one.</li>
+<li>if not, then the result is zero, and we jump to where the <code>result</code> is set to zero.</li>
+</ol>
+<p>Which means this should be our <code>||</code> IR generation.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.binop_or </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>b</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> true_label </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(</span><span style="color:#183691;">&quot;true_or&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> end_label </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(</span><span style="color:#183691;">&quot;end_or&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> result </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(</span><span style="color:#183691;">&quot;dst_or&quot;</span><span>);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src1 </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, b.@</span><span style="color:#183691;">&quot;0&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .jump_nz </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(src1, true_label) });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src2 </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, b.@</span><span style="color:#183691;">&quot;1&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .jump_nz </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(src2, true_label) });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>dst : </span><span style="font-weight:bold;color:#a71d5d;">ir.Value =</span><span> .{ .variable </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> result };
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .copy </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .constant </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0 </span><span>}, dst) });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .jump </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> end_label });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .label </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> true_label });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .copy </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .constant </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">1 </span><span>}, dst) });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .label </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> end_label });
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> dst;
+</span><span>},
+</span></code></pre>
+<p>This should work.</p>
+<p>This is the C file I am experimenting with this evening:</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return </span><span style="color:#0086b3;">0 </span><span style="font-weight:bold;color:#a71d5d;">|| </span><span style="color:#0086b3;">0 </span><span style="font-weight:bold;color:#a71d5d;">&amp;&amp; </span><span>(</span><span style="color:#0086b3;">1 </span><span style="font-weight:bold;color:#a71d5d;">/ </span><span style="color:#0086b3;">0</span><span>);
+</span><span>}
+</span></code></pre>
+<p>And this is the generated IR:</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>PROGRAM
+</span><span>	FUNCTION main
+</span><span>		jnz 0 =&gt; true_or.0
+</span><span>		jz  0 =&gt; false_and.3
+</span><span>		div.6 &lt;- 1 / 0
+</span><span>		jz  div.6 =&gt; false_and.3
+</span><span>		dst_and.5 &lt;- 1
+</span><span>		jump =&gt; end_and.4
+</span><span>		=&gt; false_and.3
+</span><span>		dst_and.5 &lt;- 0
+</span><span>		=&gt; end_and.4
+</span><span>		jnz dst_and.5 =&gt; true_or.0
+</span><span>		dst_or.2 &lt;- 0
+</span><span>		jump =&gt; end_or.1
+</span><span>		=&gt; true_or.0
+</span><span>		dst_or.2 &lt;- 1
+</span><span>		=&gt; end_or.1
+</span><span>		ret dst_or.2
+</span></code></pre>
+<p>Eh. This looks wrong at first glance, but working through it, it seems to be .. fine? The division by 0 is immediately jumped over to greener pastures and the function returns 0.</p>
+<p>The tests pass, which means I have corrected all the typos and exhausted all the switches and there are no panics. Verification of the logic will come later.</p>
+<hr />
+<h2 id="assembly-generation">Assembly Generation</h2>
+<p>The Book goes into a lengthy explanation of the "flags" mechanism in c86 assembly, in addition with the first brush with Undefined Behaviour. No point in repeating that here, go read the book. I just want to write code.</p>
+<p>The new Assembly AST includes new assembly instructions, as well as <code>cond_code</code>s: the various flags that will be set and unset depending on given comparisons. These are kinda free floating right now. Maybe I will stuff them within the <code>Instr</code> namespace later.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const </span><span>CondCode </span><span style="font-weight:bold;color:#a71d5d;">= enum </span><span>{ e, ne, g, ge, l, le };
+</span></code></pre>
+<p>That's it. The rest comes when adding doubles and floats and nasty other stuff. And here are the new instructions:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Instr </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    </span><span style="font-style:italic;color:#969896;">// snip --
+</span><span>    cmp: </span><span style="font-weight:bold;color:#a71d5d;">Mov</span><span>,
+</span><span>    jmp: [:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>    jmp_cc: </span><span style="font-weight:bold;color:#a71d5d;">struct </span><span>{ CondCode, [:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> u8 },
+</span><span>    set_cc: </span><span style="font-weight:bold;color:#a71d5d;">struct </span><span>{ CondCode, Operand },
+</span><span>    label: [:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>    </span><span style="font-style:italic;color:#969896;">// snip --
+</span><span>};
+</span></code></pre>
+<p><code>cmp</code> just uses the <code>Mov</code> struct, which is really an <code>Operand</code> tuple. The other tuples are not reused enough for me to give them a name (yet?).</p>
+<p>Then comes the conversion between the IR and the Assembly.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">instr_to_asm</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    instr: </span><span style="font-weight:bold;color:#a71d5d;">ir.Instr</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!</span><span>[]</span><span style="font-weight:bold;color:#a71d5d;">assembly.Instr </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(instr) {
+</span><span>        </span><span style="font-style:italic;color:#969896;">// snip==
+</span><span style="color:#0086b3;">        .unop_lnot </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>u</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>value_to_asm(u.src);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dst </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>value_to_asm(u.dst);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return try</span><span> alloc.dupe(assembly.Instr, &amp;.{
+</span><span>            .{ .cmp </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .imm </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0 </span><span>}, src) },
+</span><span>            .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .imm </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0 </span><span>}, dst) },
+</span><span>            .{ .set_cc </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{</span><span style="color:#0086b3;"> .e</span><span>, dst } },
+</span><span>            });
+</span><span>        },
+</span><span>        </span><span style="font-style:italic;color:#969896;">// snip --
+</span><span style="color:#0086b3;">        .binop_eql</span><span>,</span><span style="color:#0086b3;"> .binop_neq</span><span>,</span><span style="color:#0086b3;"> .binop_lt</span><span>,</span><span style="color:#0086b3;"> .binop_le</span><span>,</span><span style="color:#0086b3;"> .binop_gt</span><span>,</span><span style="color:#0086b3;"> .binop_ge </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>b</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src1 </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>value_to_asm(b.src1);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src2 </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>value_to_asm(b.src2);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dst </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>value_to_asm(b.dst);
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>cc: </span><span style="font-weight:bold;color:#a71d5d;">assembly.Instr.CondCode = switch </span><span>(instr) {
+</span><span style="color:#0086b3;">                .binop_eql </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span style="color:#0086b3;"> .e</span><span>,
+</span><span style="color:#0086b3;">                .binop_neq </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span style="color:#0086b3;"> .ne</span><span>,
+</span><span style="color:#0086b3;">                .binop_lt </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span style="color:#0086b3;"> .l</span><span>,
+</span><span style="color:#0086b3;">                .binop_le </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span style="color:#0086b3;"> .le</span><span>,
+</span><span style="color:#0086b3;">                .binop_gt </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span style="color:#0086b3;"> .g</span><span>,
+</span><span style="color:#0086b3;">                .binop_ge </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span style="color:#0086b3;"> .ge</span><span>,
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; unreachable</span><span>,
+</span><span>            };
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return try</span><span> alloc.dupe(assembly.Instr, &amp;.{
+</span><span>                .{ .cmp </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(src2, src1) },
+</span><span>                .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .imm </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0 </span><span>}, dst) },
+</span><span>                .{ .set_cc </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ cc, dst } },
+</span><span>            });
+</span><span>        },
+</span><span style="color:#0086b3;">        .label </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>s</span><span style="font-weight:bold;color:#a71d5d;">| return try</span><span> alloc.dupe(assembly.Instr, &amp;.{
+</span><span>            .{ .label </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> s },
+</span><span>        }),
+</span><span style="color:#0086b3;">        .jump </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>s</span><span style="font-weight:bold;color:#a71d5d;">| return try</span><span> alloc.dupe(assembly.Instr, &amp;.{
+</span><span>            .{ .jmp </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> s },
+</span><span>        }),
+</span><span style="color:#0086b3;">        .jump_z</span><span>,</span><span style="color:#0086b3;"> .jump_nz </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>j</span><span style="font-weight:bold;color:#a71d5d;">| return try</span><span> alloc.dupe(assembly.Instr, &amp;.{
+</span><span>            .{ .cmp </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .imm </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0 </span><span>}, value_to_asm(j.cond)) },
+</span><span>            .{ .jmp_cc </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(instr </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .jump_z</span><span>)</span><span style="color:#0086b3;"> .e </span><span style="font-weight:bold;color:#a71d5d;">else</span><span style="color:#0086b3;"> .ne</span><span>, j.target } },
+</span><span>        }),
+</span><span style="color:#0086b3;">        .copy </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>u</span><span style="font-weight:bold;color:#a71d5d;">| return try</span><span> alloc.dupe(assembly.Instr, &amp;.{
+</span><span>            .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(
+</span><span>                value_to_asm(u.src),
+</span><span>                value_to_asm(u.dst),
+</span><span>            ) },
+</span><span>        }),
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>The rest of replacing pseudo registers is fairly mechanical and boring and I hate it. Here is the current <code>fixup_instrs</code>, just to see what it has grown into in three short chapters.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">fixup_instrs</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    prgm: </span><span style="font-weight:bold;color:#a71d5d;">*assembly.Prgm</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>out: std.ArrayListUnmanaged(assembly.Instr) </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> .initCapacity(
+</span><span>        alloc,
+</span><span>        prgm.func_def.instrs.capacity,
+</span><span>    );
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer </span><span>{
+</span><span>        std.mem.swap(
+</span><span>            std.ArrayListUnmanaged(assembly.Instr),
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>out,
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>prgm.func_def.instrs,
+</span><span>        );
+</span><span>        out.deinit(alloc);
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>State </span><span style="font-weight:bold;color:#a71d5d;">= enum </span><span>{
+</span><span>        start,
+</span><span>        mov_stack_stack,
+</span><span>        cmp_stack_stack,
+</span><span>        cmp_to_imm,
+</span><span>        add_stack_stack,
+</span><span>        sub_stack_stack,
+</span><span>        mul_to_stack,
+</span><span>        idiv_const,
+</span><span>        legal,
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(prgm.func_def.instrs.items) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>instr</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        state: </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(State.start) {
+</span><span style="color:#0086b3;">            .start </span><span style="font-weight:bold;color:#a71d5d;">=&gt; switch </span><span>(instr) {
+</span><span style="color:#0086b3;">                .mov </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>m</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(m.src </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .stack </span><span style="font-weight:bold;color:#a71d5d;">and</span><span> m.dst </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .stack</span><span>)
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .mov_stack_stack
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .legal</span><span>,
+</span><span style="color:#0086b3;">                .cmp </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>m</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(m.src </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .stack </span><span style="font-weight:bold;color:#a71d5d;">and</span><span> m.dst </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .stack</span><span>)
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .cmp_stack_stack
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">else if </span><span>(m.dst </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .imm</span><span>)
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .cmp_to_imm
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .legal</span><span>,
+</span><span style="color:#0086b3;">                .add </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>m</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(m.src </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .stack </span><span style="font-weight:bold;color:#a71d5d;">and</span><span> m.dst </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .stack</span><span>)
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .add_stack_stack
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .legal</span><span>,
+</span><span style="color:#0086b3;">                .sub </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>m</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(m.src </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .stack </span><span style="font-weight:bold;color:#a71d5d;">and</span><span> m.dst </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .stack</span><span>)
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .sub_stack_stack
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .legal</span><span>,
+</span><span style="color:#0086b3;">                .mul </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>m</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(m.dst </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .stack</span><span>)
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .mul_to_stack
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .legal</span><span>,
+</span><span style="color:#0086b3;">                .idiv </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>o</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(o </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .imm</span><span>)
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .idiv_const
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .legal</span><span>,
+</span><span>
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; continue</span><span> :state</span><span style="color:#0086b3;"> .legal</span><span>,
+</span><span>            },
+</span><span>
+</span><span style="color:#0086b3;">            .mov_stack_stack </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> out.appendSlice(alloc, &amp;.{
+</span><span>                .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(instr.mov.src, .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R10 </span><span>}) },
+</span><span>                .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R10 </span><span>}, instr.mov.dst) },
+</span><span>            }),
+</span><span style="color:#0086b3;">            .cmp_stack_stack </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> out.appendSlice(alloc, &amp;.{
+</span><span>                .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(instr.cmp.src, .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R10 </span><span>}) },
+</span><span>                .{ .cmp </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R10 </span><span>}, instr.cmp.dst) },
+</span><span>            }),
+</span><span style="color:#0086b3;">            .cmp_to_imm </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> out.appendSlice(alloc, &amp;.{
+</span><span>                .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(instr.cmp.dst, .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R11 </span><span>}) },
+</span><span>                .{ .cmp </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(instr.cmp.src, .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R11 </span><span>}) },
+</span><span>            }),
+</span><span style="color:#0086b3;">            .add_stack_stack </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> out.appendSlice(alloc, &amp;.{
+</span><span>                .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(instr.add.src, .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R10 </span><span>}) },
+</span><span>                .{ .add </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R10 </span><span>}, instr.add.dst) },
+</span><span>            }),
+</span><span style="color:#0086b3;">            .sub_stack_stack </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> out.appendSlice(alloc, &amp;.{
+</span><span>                .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(instr.sub.src, .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R10 </span><span>}) },
+</span><span>                .{ .sub </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R10 </span><span>}, instr.sub.dst) },
+</span><span>            }),
+</span><span style="color:#0086b3;">            .mul_to_stack </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> out.appendSlice(alloc, &amp;.{
+</span><span>                .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(instr.mul.dst, .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R11 </span><span>}) },
+</span><span>                .{ .mul </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(instr.mul.src, .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R11 </span><span>}) },
+</span><span>                .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R11 </span><span>}, instr.mul.dst) },
+</span><span>            }),
+</span><span style="color:#0086b3;">            .idiv_const </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> out.appendSlice(alloc, &amp;.{
+</span><span>                .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(instr.idiv, .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R11 </span><span>}) },
+</span><span>                .{ .idiv </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R11 </span><span>} },
+</span><span>            }),
+</span><span>
+</span><span style="color:#0086b3;">            .legal </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> out.append(alloc, instr),
+</span><span>        }
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>I kind of like how it looks, in that there is a clear listing of each illegal state, and a direct transformation from a legal form to the other, and the discovery code is split up from the replacement code. It might even be easier to review? I do not know.</p>
+<p>All tests pass. Even the earlier dividng by zero one. If you are curious, here is the generated final assembly.</p>
+<pre data-lang="asm" style="background-color:#ffffff;color:#323232;" class="language-asm "><code class="language-asm" data-lang="asm"><span style="font-weight:bold;color:#795da3;">.globl _main
+</span><span style="font-weight:bold;color:#795da3;">_main:
+</span><span style="font-weight:bold;color:#795da3;">	pushq   %</span><span>rbp
+</span><span style="font-weight:bold;color:#795da3;">	</span><span style="font-weight:bold;color:#a71d5d;">movq    </span><span style="font-weight:bold;color:#795da3;">%</span><span>rsp, </span><span style="font-weight:bold;color:#795da3;">%</span><span>rbp
+</span><span style="font-weight:bold;color:#795da3;">	subq    </span><span style="color:#62a35c;">$</span><span style="color:#0086b3;">12</span><span>, </span><span style="font-weight:bold;color:#795da3;">%</span><span>rsp
+</span><span style="font-weight:bold;color:#795da3;">	movl    </span><span style="color:#62a35c;">$</span><span style="color:#0086b3;">0</span><span>, </span><span style="font-weight:bold;color:#795da3;">%</span><span>r11d
+</span><span style="font-weight:bold;color:#795da3;">	cmpl    </span><span style="color:#62a35c;">$</span><span style="color:#0086b3;">0</span><span>, </span><span style="font-weight:bold;color:#795da3;">%</span><span>r11d
+</span><span style="font-weight:bold;color:#795da3;">	</span><span style="font-weight:bold;color:#a71d5d;">jne     </span><span style="font-weight:bold;color:#795da3;">.Ltrue_or.</span><span style="color:#0086b3;">0
+</span><span style="font-weight:bold;color:#795da3;">	movl    </span><span style="color:#62a35c;">$</span><span style="color:#0086b3;">0</span><span>, </span><span style="font-weight:bold;color:#795da3;">%</span><span>r11d
+</span><span style="font-weight:bold;color:#795da3;">	cmpl    </span><span style="color:#62a35c;">$</span><span style="color:#0086b3;">0</span><span>, </span><span style="font-weight:bold;color:#795da3;">%</span><span>r11d
+</span><span style="font-weight:bold;color:#795da3;">	</span><span style="font-weight:bold;color:#a71d5d;">je      </span><span style="font-weight:bold;color:#795da3;">.Lfalse_and.</span><span style="color:#0086b3;">3
+</span><span style="font-weight:bold;color:#795da3;">	movl    </span><span style="color:#62a35c;">$</span><span style="color:#0086b3;">1</span><span>, </span><span style="font-weight:bold;color:#795da3;">%</span><span>eax
+</span><span style="font-weight:bold;color:#795da3;">	</span><span style="font-weight:bold;color:#a71d5d;">cdq
+</span><span style="font-weight:bold;color:#795da3;">	movl    </span><span style="color:#62a35c;">$</span><span style="color:#0086b3;">0</span><span>, </span><span style="font-weight:bold;color:#795da3;">%</span><span>r11d
+</span><span style="font-weight:bold;color:#795da3;">	idivl   %</span><span>r11d
+</span><span style="font-weight:bold;color:#795da3;">	movl    %</span><span>eax, -</span><span style="color:#0086b3;">4</span><span style="font-weight:bold;color:#795da3;">(%</span><span>rsp</span><span style="font-weight:bold;color:#795da3;">)
+</span><span style="font-weight:bold;color:#795da3;">	cmpl    </span><span style="color:#62a35c;">$</span><span style="color:#0086b3;">0</span><span>, -</span><span style="color:#0086b3;">4</span><span style="font-weight:bold;color:#795da3;">(%</span><span>rsp</span><span style="font-weight:bold;color:#795da3;">)
+</span><span style="font-weight:bold;color:#795da3;">	</span><span style="font-weight:bold;color:#a71d5d;">je      </span><span style="font-weight:bold;color:#795da3;">.Lfalse_and.</span><span style="color:#0086b3;">3
+</span><span style="font-weight:bold;color:#795da3;">	movl    </span><span style="color:#62a35c;">$</span><span style="color:#0086b3;">1</span><span>, -</span><span style="color:#0086b3;">8</span><span style="font-weight:bold;color:#795da3;">(%</span><span>rsp</span><span style="font-weight:bold;color:#795da3;">)
+</span><span style="font-weight:bold;color:#795da3;">	</span><span style="font-weight:bold;color:#a71d5d;">jmp    </span><span style="font-weight:bold;color:#795da3;">.Lend_and.</span><span style="color:#0086b3;">4
+</span><span style="font-weight:bold;color:#795da3;">.Lfalse_and.</span><span style="color:#0086b3;">3</span><span style="font-weight:bold;color:#795da3;">:
+</span><span style="font-weight:bold;color:#795da3;">	movl    </span><span style="color:#62a35c;">$</span><span style="color:#0086b3;">0</span><span>, -</span><span style="color:#0086b3;">8</span><span style="font-weight:bold;color:#795da3;">(%</span><span>rsp</span><span style="font-weight:bold;color:#795da3;">)
+</span><span style="font-weight:bold;color:#795da3;">.Lend_and.</span><span style="color:#0086b3;">4</span><span style="font-weight:bold;color:#795da3;">:
+</span><span style="font-weight:bold;color:#795da3;">	cmpl    </span><span style="color:#62a35c;">$</span><span style="color:#0086b3;">0</span><span>, -</span><span style="color:#0086b3;">8</span><span style="font-weight:bold;color:#795da3;">(%</span><span>rsp</span><span style="font-weight:bold;color:#795da3;">)
+</span><span style="font-weight:bold;color:#795da3;">	</span><span style="font-weight:bold;color:#a71d5d;">jne     </span><span style="font-weight:bold;color:#795da3;">.Ltrue_or.</span><span style="color:#0086b3;">0
+</span><span style="font-weight:bold;color:#795da3;">	movl    </span><span style="color:#62a35c;">$</span><span style="color:#0086b3;">0</span><span>, -</span><span style="color:#0086b3;">12</span><span style="font-weight:bold;color:#795da3;">(%</span><span>rsp</span><span style="font-weight:bold;color:#795da3;">)
+</span><span style="font-weight:bold;color:#795da3;">	</span><span style="font-weight:bold;color:#a71d5d;">jmp    </span><span style="font-weight:bold;color:#795da3;">.Lend_or.</span><span style="color:#0086b3;">1
+</span><span style="font-weight:bold;color:#795da3;">.Ltrue_or.</span><span style="color:#0086b3;">0</span><span style="font-weight:bold;color:#795da3;">:
+</span><span style="font-weight:bold;color:#795da3;">	movl    </span><span style="color:#62a35c;">$</span><span style="color:#0086b3;">1</span><span>, -</span><span style="color:#0086b3;">12</span><span style="font-weight:bold;color:#795da3;">(%</span><span>rsp</span><span style="font-weight:bold;color:#795da3;">)
+</span><span style="font-weight:bold;color:#795da3;">.Lend_or.</span><span style="color:#0086b3;">1</span><span style="font-weight:bold;color:#795da3;">:
+</span><span style="font-weight:bold;color:#795da3;">	movl    </span><span>-</span><span style="color:#0086b3;">12</span><span style="font-weight:bold;color:#795da3;">(%</span><span>rsp</span><span style="font-weight:bold;color:#795da3;">)</span><span>, </span><span style="font-weight:bold;color:#795da3;">%</span><span>eax
+</span><span style="font-weight:bold;color:#795da3;">	</span><span style="font-weight:bold;color:#a71d5d;">movq    </span><span style="font-weight:bold;color:#795da3;">%</span><span>rbp, </span><span style="font-weight:bold;color:#795da3;">%</span><span>rsp
+</span><span style="font-weight:bold;color:#795da3;">	popq    %</span><span>rbp
+</span><span style="font-weight:bold;color:#795da3;">	</span><span style="font-weight:bold;color:#a71d5d;">ret
+</span></code></pre>
+<p>There is one complication. Even tho the tests passed, while reviewing through the book I realized I am supposed to emit different names for the registers when they are in the <code>set_cc</code> instruction. Since the tests passed I can just .. ignore this? But let's do it.</p>
+<p>I am going to abuse the <code>width</code> property (same one I used to get indentation) to pass in the register's width. For reference, this the current emission/printing code for <code>set_cc</code>:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.set_cc </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>s</span><span style="font-weight:bold;color:#a71d5d;">| try</span><span> writer.print(</span><span style="color:#183691;">&quot;</span><span style="color:#0086b3;">\t</span><span style="color:#183691;">set{s:&lt;7}{gen}&quot;</span><span>, .{ </span><span style="color:#62a35c;">@tagName</span><span>(s.@</span><span style="color:#183691;">&quot;0&quot;</span><span>), s.@</span><span style="color:#183691;">&quot;1&quot; </span><span>}),
+</span></code></pre>
+<p>Fairly straightforward and avoids special formatting logic for <code>CondCode</code>: just use the tag name! The <code>:_&lt;7</code> syntax is how you're <em>supposed</em> to use the <code>width</code> property, by passing optional padding.</p>
+<p>For the Operand, all the change needed here is to change <code>{gen}</code> to <code>{gen:1}</code>, passing a width of <code>1</code> into the downstream formatter.</p>
+<p>In the <code>Operand</code> formatter, this is the Register printing code:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.reg </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>r</span><span style="font-weight:bold;color:#a71d5d;">| switch </span><span>(r) {
+</span><span style="color:#0086b3;">    .AX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%eax&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">    .DX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%edx&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">    .R10 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r10d&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">    .R11 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r11d&quot;</span><span>, .{}),
+</span><span>},
+</span></code></pre>
+<p>And this is when a conditional for <code>width == 1</code> is added. I am treating the default value as before.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.reg </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>r</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(options.width </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">1</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(r) {
+</span><span style="color:#0086b3;">    .AX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%a1&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">    .DX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%d1&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">    .R10 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r10b&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">    .R11 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r11b&quot;</span><span>, .{}),
+</span><span>} </span><span style="font-weight:bold;color:#a71d5d;">else switch </span><span>(r) {
+</span><span style="color:#0086b3;">    .AX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%eax&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">    .DX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%edx&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">    .R10 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r10d&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">    .R11 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r11d&quot;</span><span>, .{}),
+</span><span>},
+</span></code></pre>
+<p>All tests continue to pass. So that is nice I guess.</p>
+<hr />
+<h2 id="lessons-learned">Lessons Learned</h2>
+<p>Not much really. This is a fairly mechanical chapter. The new info I had already learned when going through the Book the first time. Maybe I learned not to target x86 assembly directly for my own language. Why not target <code>wasm</code>? It does not have <code>goto</code>.</p>
+<footer class="footnotes">
+<ol class="footnotes-list">
+<li id="fn-language">
+<p>Yet another point for debugging your language knowledge. And do not tell me this is not actually part of the language. <a href="#fr-language-1">↩</a></p>
+</li>
+<li id="fn-tacky">
+<p>If I were developing a compiler for a language other than C, say <a href="https://odin-lang.org">Odin</a>, this is probably where I'd diverge from this Book on the IR. So early. But it seems annoying to me to encode the <code>goto</code> logic straight in my implementation. I guess it depends on the backend. <a href="#fr-tacky-1">↩</a></p>
+</li>
+<li id="fn-goto">
+<p>This is necessary because C, and x86 assembly for that matter, has <code>goto</code>, which is implemented later in the book, and it fits the C semantics of <code>switch</code>. So implementing <code>goto</code> is the least friction option. <code>wasm</code>, however, does not have <code>goto</code>, and uses structured code instead with <code>break</code> out of blocks. I am not actually sure how C's <code>goto</code> compiles to <code>wasm</code>. Investigation is required. <a href="#fr-goto-1">↩</a></p>
+</li>
+</ol>
+</footer>
+</main>
+
+			
+			
+				<footer>
+					<small>
+						
+							<a class="mylink" href="mailto:a.sibahi@gmail.com" rel="me">Mail</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;x.com&#x2F;@asibahi" rel="me">Twitter</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;typo.social&#x2F;@asibahi" rel="me">typo.social</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;sr.ht&#x2F;~asibahi&#x2F;" rel="me">SourceHut</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;github.com&#x2F;asibahi" rel="me">GitHub</a>
+						
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;about&#x2F;">Cat</a>
+						
+					</small>
+				</footer>
+			
+		</div>
+	</body>
+</html>

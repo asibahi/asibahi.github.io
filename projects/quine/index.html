@@ -1,0 +1,125 @@
+<!doctype html>
+<html  dir="ltr" >
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Musings"
+		/>
+		<title>Abdul Rahman Sibahi | Quine</title>
+		<link rel="stylesheet" href="https://blog.ar-ms.me/style.css?h=5e9f4e540307a223aec7" />
+	</head>
+
+	<body>
+
+		This website has moved to <a href="http://blog.ar-ms.me/">blog.ar-ms.me</a>. No further content will be published on the  <a href="https://www.un.org/unispal/document/a-hrc-59-23-from-economy-of-occupation-to-economy-of-genocide-report-special-rapporteur-francesca-albanese-palestine-2025/">Github</a> hosted version.
+
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			
+	<header class="space">
+		<a href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;"> ⏏️ </a>
+
+		
+			<h1>Quine</h1>
+			
+
+			<nav>
+				 
+				<details class="secondary">
+					<summary> Contents </summary>
+					<ul>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/projects/quine/#rust">Rust</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/projects/quine/#zig">Zig</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/projects/quine/#swift">Swift</a>
+							
+						</li>
+						
+					</ul>
+				</details>
+				
+			</nav>
+		
+	</header>
+
+			
+			
+	<main><p>There are a couple of <a href="https://en.wikipedia.org/wiki/Quine_(computing)">quines</a> I wrote. Not the shortest or most code golfed implementations, but they are mine. They generally follow the same idea anyway.</p>
+<h2 id="rust">Rust</h2>
+<p>Passes <code>rustfmt</code> and <code>clippy::pedantic</code>.</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">main</span><span>() {
+</span><span>    println!(</span><span style="color:#183691;">&quot;</span><span style="color:#0086b3;">{Q}\n</span><span style="color:#183691;">const Q: &amp;str = r</span><span style="color:#0086b3;">{0}\&quot;{Q}\&quot;{0}</span><span style="color:#183691;">;&quot;</span><span>, </span><span style="color:#183691;">&#39;#&#39;</span><span>);
+</span><span>}
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> Q: </span><span style="font-weight:bold;color:#a71d5d;">&amp;str = r</span><span style="color:#183691;">#&quot;fn main() {
+</span><span style="color:#183691;">    println!(&quot;{Q}\nconst Q: &amp;str = r{0}\&quot;{Q}\&quot;{0};&quot;, &#39;#&#39;);
+</span><span style="color:#183691;">}&quot;#</span><span>;
+</span></code></pre>
+<p><a href="https://codegolf.stackexchange.com/questions/69/golf-you-a-quine-for-great-good/97833#97833">The shortest implementation is fairly cool.</a></p>
+<h2 id="zig">Zig</h2>
+<p>This one is fairly longwinded due to Zig's otherwise very nice multiline string literals syntax. Passes <code>zig fmt</code>. This works for 0.15.1.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">main</span><span>() </span><span style="font-weight:bold;color:#a71d5d;">!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> o.interface.print(</span><span style="color:#183691;">&quot;{s}</span><span style="color:#0086b3;">\n</span><span style="color:#183691;">const Q =</span><span style="color:#0086b3;">\n</span><span style="color:#183691;">&quot;</span><span>, .{Q});
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> it </span><span style="font-weight:bold;color:#a71d5d;">= @import</span><span>(</span><span style="color:#183691;">&quot;std&quot;</span><span>).mem.splitScalar(u8, Q, </span><span style="color:#183691;">&#39;</span><span style="color:#0086b3;">\n</span><span style="color:#183691;">&#39;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(it.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>l</span><span style="font-weight:bold;color:#a71d5d;">| try</span><span> o.interface.print(</span><span style="color:#183691;">&quot;    </span><span style="color:#0086b3;">\\\\</span><span style="color:#183691;">{s}</span><span style="color:#0086b3;">\n</span><span style="color:#183691;">&quot;</span><span>, .{l});
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> o.interface.writeAll(</span><span style="color:#183691;">&quot;;</span><span style="color:#0086b3;">\n</span><span style="color:#183691;">var o = @import(</span><span style="color:#0086b3;">\&quot;</span><span style="color:#183691;">std</span><span style="color:#0086b3;">\&quot;</span><span style="color:#183691;">).fs.File.stdout().writer(&amp;.{});</span><span style="color:#0086b3;">\n</span><span style="color:#183691;">&quot;</span><span>);
+</span><span>}
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> Q </span><span style="font-weight:bold;color:#a71d5d;">=
+</span><span>    </span><span style="color:#183691;">\\pub fn main() !void {
+</span><span>    </span><span style="color:#183691;">\\    try o.interface.print(&quot;{s}\nconst Q =\n&quot;, .{Q});
+</span><span>    </span><span style="color:#183691;">\\    var it = @import(&quot;std&quot;).mem.splitScalar(u8, Q, &#39;\n&#39;);
+</span><span>    </span><span style="color:#183691;">\\    while (it.next()) |l| try o.interface.print(&quot;    \\\\{s}\n&quot;, .{l});
+</span><span>    </span><span style="color:#183691;">\\    try o.interface.writeAll(&quot;;\nvar o = @import(\&quot;std\&quot;).fs.File.stdout().writer(&amp;.{});\n&quot;);
+</span><span>    </span><span style="color:#183691;">\\}
+</span><span>;
+</span><span style="font-weight:bold;color:#a71d5d;">var</span><span> o </span><span style="font-weight:bold;color:#a71d5d;">= @import</span><span>(</span><span style="color:#183691;">&quot;std&quot;</span><span>).fs.File.stdout().writer(&amp;.{});
+</span></code></pre>
+<h2 id="swift">Swift</h2>
+<p>No main function but different order.</p>
+<pre data-lang="swift" style="background-color:#ffffff;color:#323232;" class="language-swift "><code class="language-swift" data-lang="swift"><span style="font-weight:bold;color:#a71d5d;">let</span><span> Q </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> #</span><span style="color:#183691;">&quot;&quot;&quot;
+</span><span style="color:#183691;">print(&quot;</span><span style="font-weight:bold;color:#a71d5d;">let</span><span> Q </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> #\</span><span style="color:#183691;">&quot;</span><span style="color:#0086b3;">\&quot;\&quot;\n</span><span>\(Q)</span><span style="color:#0086b3;">\n\&quot;\&quot;\&quot;</span><span style="color:#183691;">#</span><span style="color:#0086b3;">\n</span><span>\(Q)</span><span style="color:#183691;">&quot;</span><span>)
+</span><span style="color:#183691;">&quot;&quot;&quot;#
+</span><span style="color:#183691;">print(&quot;</span><span style="font-weight:bold;color:#a71d5d;">let</span><span> Q </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> #\</span><span style="color:#183691;">&quot;</span><span style="color:#0086b3;">\&quot;\&quot;\n</span><span>\(Q)</span><span style="color:#0086b3;">\n\&quot;\&quot;\&quot;</span><span style="color:#183691;">#</span><span style="color:#0086b3;">\n</span><span>\(Q)</span><span style="color:#183691;">&quot;</span><span>)
+</span></code></pre>
+</main>
+
+			
+			
+				<footer>
+					<small>
+						
+							<a class="mylink" href="mailto:a.sibahi@gmail.com" rel="me">Mail</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;x.com&#x2F;@asibahi" rel="me">Twitter</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;typo.social&#x2F;@asibahi" rel="me">typo.social</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;sr.ht&#x2F;~asibahi&#x2F;" rel="me">SourceHut</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;github.com&#x2F;asibahi" rel="me">GitHub</a>
+						
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;about&#x2F;">Cat</a>
+						
+					</small>
+				</footer>
+			
+		</div>
+	</body>
+</html>

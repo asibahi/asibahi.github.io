@@ -1,0 +1,1304 @@
+<!doctype html>
+<html  dir="ltr" >
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Musings"
+		/>
+		<title>Abdul Rahman Sibahi | Writing a C Compiler, Chapter 9, in Zig</title>
+		<link rel="stylesheet" href="https://blog.ar-ms.me/style.css?h=5e9f4e540307a223aec7" />
+	</head>
+
+	<body>
+
+		This website has moved to <a href="http://blog.ar-ms.me/">blog.ar-ms.me</a>. No further content will be published on the  <a href="https://www.un.org/unispal/document/a-hrc-59-23-from-economy-of-occupation-to-economy-of-genocide-report-special-rapporteur-francesca-albanese-palestine-2025/">Github</a> hosted version.
+
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			
+	<header class="space">
+		<a href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;"> ⏏️ </a>
+
+		
+			<h1>Writing a C Compiler, Chapter 9, in Zig</h1>
+			
+
+			<nav>
+				
+					<p class="secondary">2025-06-01</p>
+				 
+				<details class="secondary">
+					<summary> Contents </summary>
+					<ul>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c9/#lexer-ast-and-parser">Lexer, AST, and Parser</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c9/#semantic-analysis">Semantic Analysis</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c9/#type-checking">Type checking</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c9/#internal-represntation">Internal Represntation</a>
+							
+							<ul>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/paella/c9/#small-detour-back-to-type-checking">Small Detour Back to Type Checking</a>
+								</li>
+								
+							</ul>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c9/#assembly-generation">Assembly Generation</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c9/#code-emission">Code Emission</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c9/#debugging">Debugging</a>
+							
+							<ul>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/paella/c9/#unicodedecodeerror">UnicodeDecodeError</a>
+								</li>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/paella/c9/#assertionerror">AssertionError</a>
+								</li>
+								
+							</ul>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c9/#lessons-learned">Lessons Learned</a>
+							
+						</li>
+						
+					</ul>
+				</details>
+				
+			</nav>
+		
+	</header>
+
+			
+			
+	<main><p>After <a href="https://blog.ar-ms.me/paella/c8/">eight</a> grueling (not really) chapters of <a href="https://norasandler.com/2022/03/29/Write-a-C-Compiler-the-Book.html">Writing a C Compiler</a>, time to implement more assembly instructions. Functions! Linkage! Commas!</p>
+<hr />
+<h2 id="lexer-ast-and-parser">Lexer, AST, and Parser</h2>
+<p>Lexer just has a comma now. I thought about adding the comma operator but that didn't seem worth the trouble.</p>
+<p>The AST has two new additions. Function call expressions and function declarations (which are rebranded and improved function definitions)! Other changes include how the structures themselves are defined. A program is now a <em>list</em> of function declarations, instead of just one. How about that?</p>
+<p>These are the new AST nodes. I am not sure these compile or not yet, which I will find out when I am done with the parser. The use of <code>SegmentedList</code> is discussed a couple of chapters ago as a more Arena-friendly collection type.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Prgm </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    funcs: std.SegmentedList(</span><span style="font-weight:bold;color:#a71d5d;">FuncDecl</span><span>, </span><span style="color:#0086b3;">0</span><span>),
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Block </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    body: std.SegmentedList(</span><span style="font-weight:bold;color:#a71d5d;">BlockItem</span><span>, </span><span style="color:#0086b3;">0</span><span>),
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>BlockItem </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    D: </span><span style="font-weight:bold;color:#a71d5d;">Decl</span><span>,
+</span><span>    S: </span><span style="font-weight:bold;color:#a71d5d;">Stmt</span><span>,
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Decl </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    F: </span><span style="font-weight:bold;color:#a71d5d;">FuncDecl</span><span>,
+</span><span>    V: </span><span style="font-weight:bold;color:#a71d5d;">VarDecl</span><span>,
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>FuncDecl </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    name: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>    params: std.SegmentedList(</span><span style="font-weight:bold;color:#a71d5d;">Identifier</span><span>, </span><span style="color:#0086b3;">0</span><span>),
+</span><span>    block: </span><span style="font-weight:bold;color:#a71d5d;">?Block</span><span>,
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>VarDecl </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    name: </span><span style="font-weight:bold;color:#a71d5d;">Identifier</span><span>,
+</span><span>    init: </span><span style="font-weight:bold;color:#a71d5d;">?*Expr</span><span>,
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Expr </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    </span><span style="font-style:italic;color:#969896;">// snip --
+</span><span>    func_call: </span><span style="font-weight:bold;color:#a71d5d;">struct </span><span>{ Identifier, std.SegmentedList(Expr, </span><span style="color:#0086b3;">0</span><span>) },
+</span><span>};
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// This was implemented last chapter fixing the Segmentation Fault!
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Identifier </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    name: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>    idx: </span><span style="font-weight:bold;color:#a71d5d;">utils.StringInterner.Idx</span><span>,
+</span><span>};
+</span></code></pre>
+<p>It is going to be annoying fixing all the type errors throughout. Nonetheless, the parsing grammar for these new node types are going to change significantly. Here is. This is the new, tentative, <code>parse_prgm</code>. I am not sure this is entirely correct yet.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">parse_prgm</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ast.Prgm </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>funcs: std.SegmentedList(</span><span style="font-weight:bold;color:#a71d5d;">ast.FuncDecl</span><span>, </span><span style="color:#0086b3;">0</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{};
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(tokens.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>next_token</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        tokens.put_back(next_token);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> func_decl </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_func_decl(arena, tokens);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> funcs.append(arena, func_decl);
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .funcs </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> funcs };
+</span><span>}
+</span></code></pre>
+<p><code>parse_func_decl</code> is the same as the old <code>parse_func_def</code>, but with optional parameters and an optional body. Ok maybe not the same, it is a behemoth. And all this is going to get significantly more complex when adding different types than <code>int</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_func_decl</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ast.FuncDecl </span><span>{
+</span><span>    </span><span style="font-style:italic;color:#969896;">// same old
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.type_int, tokens);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expect(.identifier, tokens);
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// new stuff !!
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>params: std.SegmentedList(</span><span style="font-weight:bold;color:#a71d5d;">ast.Identifier</span><span>, </span><span style="color:#0086b3;">0</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{};
+</span><span>    { </span><span style="font-style:italic;color:#969896;">// params
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.l_paren, tokens);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> next_token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>        </span><span style="font-style:italic;color:#969896;">// labelled switch to loop over mutliple parameters.
+</span><span>        params: </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(next_token.tag) {
+</span><span>            </span><span style="font-style:italic;color:#969896;">// old bahaviour is this:
+</span><span style="color:#0086b3;">            .keyword_void </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try </span><span>expect(.r_paren, tokens),
+</span><span>
+</span><span>            </span><span style="font-style:italic;color:#969896;">// new optional parameters
+</span><span style="color:#0086b3;">            .type_int </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> ident </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expect(.identifier, tokens);
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> params.append(arena, .{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> ident });
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> next_next </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>
+</span><span>                </span><span style="font-style:italic;color:#969896;">// loops back here. this would be sginifcantly more annoying
+</span><span>                </span><span style="font-style:italic;color:#969896;">// to write without labeled switch
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(next_next.tag) {
+</span><span style="color:#0086b3;">                    .comma </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>                        </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.type_int, tokens);
+</span><span>                        </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :params</span><span style="color:#0086b3;"> .type_int</span><span>;
+</span><span>                    },
+</span><span style="color:#0086b3;">                    .r_paren </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{},
+</span><span>
+</span><span>                    </span><span style="font-style:italic;color:#969896;">// could just retunr here but where is the fun then?
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; continue</span><span> :params</span><span style="color:#0086b3;"> .invalid</span><span>,
+</span><span>                }
+</span><span>            },
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; return error</span><span>.SyntaxError,
+</span><span>        }
+</span><span>    }
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> block </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>block: {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> peeked </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(peeked.tag) {
+</span><span style="color:#0086b3;">            .semicolon </span><span style="font-weight:bold;color:#a71d5d;">=&gt; break</span><span> :block </span><span style="color:#0086b3;">null</span><span>,
+</span><span style="color:#0086b3;">            .l_brace </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>                tokens.put_back(peeked);
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">break</span><span> :block </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>parse_block(arena, tokens);
+</span><span>            },
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; return error</span><span>.SyntaxError,
+</span><span>        }
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> name, .params </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> params, .block </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> block };
+</span><span>}
+</span></code></pre>
+<p>There is one big item left, which is <code>BlockItem</code>, which can be a function declaration as well as a variable declaration, and it is not possible to know which is which from the token <code>type_int</code> as done before.</p>
+<p>The most straightforward way to implement it in the current code base is as follows: look for an <code>type_int</code> token, verify there is an identifier token afterwards, <em>without</em> recording it, then see what the third token is. If it is a <code>semicolon</code> or an <code>equals</code>, it is a variable; if it is a parenthesis, it is a function; otherwise it is illegal. Then the parser is rewinded to the <code>int</code> and the correct function is called. In later chapters, with global variables, it will be apparent that the only place which only accepts one type of declarations is the <code>for</code> loop statement, but I will cross that bridge when I get to it.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_decl</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ast.Decl </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> int_token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.NotEnoughJunk;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(int_token.tag </span><span style="font-weight:bold;color:#a71d5d;">!=</span><span style="color:#0086b3;"> .type_int</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>    </span><span style="color:#0086b3;">_ </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expect(.identifier, tokens);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> new_token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.NotEnoughJunk;
+</span><span>
+</span><span>    tokens.put_back(int_token);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(new_token.tag) {
+</span><span style="color:#0086b3;">        .semicolon</span><span>,</span><span style="color:#0086b3;"> .equals </span><span style="font-weight:bold;color:#a71d5d;">=&gt; return</span><span> .{ .V </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_var_decl(arena, tokens) },
+</span><span style="color:#0086b3;">        .l_paren </span><span style="font-weight:bold;color:#a71d5d;">=&gt; return</span><span> .{ .F </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_func_decl(arena, tokens) },
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; return error</span><span>.SyntaxError,
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>Parsing function calls is a new challenge. Previously, any identifier is immediately assumed to be a variable. But now, if the identifier is followed by parenthesis, it could be a function call with an arbitrary number of parameters. The new <code>identifier</code> case exhibits a serious case of rightward drift.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.identifier </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> next_token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.NotEnoughJunk;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.buffer[current.loc.start</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>current.loc.end];
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(next_token.tag) {
+</span><span style="color:#0086b3;">        .l_paren </span><span style="font-weight:bold;color:#a71d5d;">=&gt; return</span><span> .{ .func_call </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{
+</span><span>            .{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> name },
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>parse_args(arena, tokens),
+</span><span>        } },
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; </span><span>{
+</span><span>            tokens.put_back(next_token);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .@</span><span style="color:#183691;">&quot;var&quot; </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> name } };
+</span><span>        },
+</span><span>    }
+</span><span>},
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// elsewhere:
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_args</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!std.</span><span>SegmentedList(ast.Expr, </span><span style="color:#0086b3;">0</span><span>) {
+</span><span>    </span><span style="font-style:italic;color:#969896;">// assumes l_paren already consumed
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>ret: std.SegmentedList(</span><span style="font-weight:bold;color:#a71d5d;">ast.Expr</span><span>, </span><span style="color:#0086b3;">0</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{};
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> current </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.NotEnoughJunk;
+</span><span>
+</span><span>    args: </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(current.tag) {
+</span><span style="color:#0086b3;">        .r_paren </span><span style="font-weight:bold;color:#a71d5d;">=&gt; return</span><span> ret,
+</span><span style="color:#0086b3;">        .comma </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> expr </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> ret.append(arena, expr);
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> n_token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.NotEnoughJunk;
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :args n_token.tag;
+</span><span>        },
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; </span><span>{ </span><span style="font-style:italic;color:#969896;">// only actually relevant for the first argument.
+</span><span>            tokens.put_back(current);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :args</span><span style="color:#0086b3;"> .comma</span><span>;
+</span><span>        },
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<hr />
+<h2 id="semantic-analysis">Semantic Analysis</h2>
+<p>This is a bit more involved than usual this chapter. In addition to variable resolution, the compiler needs to do type checking! Do all declarations of functions (which <em>can</em> repeat), have the same number of parameters?</p>
+<p>Starting with the easier stuff, the identifier resolution pass should handle the new function syntax. Start with function calls. Here is the added part in <code>resolve_expr</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.func_call </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>f</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(bp.variable_map.get(f.@</span><span style="color:#183691;">&quot;0&quot;</span><span>.name)) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>entry</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        f.@</span><span style="color:#183691;">&quot;0&quot; </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .idx </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> entry.name };
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> f.@</span><span style="color:#183691;">&quot;1&quot;</span><span>.iterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>item</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_expr(bp, item);
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else return error</span><span>.Undeclaredfunction;
+</span><span>},
+</span></code></pre>
+<p>Resolving function declarations had me move the creation of the main variable map back into <code>resolve_prgm</code> instead, and create a new inner map for every function. Also, I need to update the <code>Entry</code> type of the variable map. This is the new <code>Entry</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const </span><span>Entry </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    name: </span><span style="font-weight:bold;color:#a71d5d;">utils.StringInterner.Idx</span><span>,
+</span><span>    scope: </span><span style="font-weight:bold;color:#a71d5d;">enum </span><span>{ local, parent } </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .local</span><span>,
+</span><span>    linkage: </span><span style="font-weight:bold;color:#a71d5d;">enum </span><span>{ none, external } </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .none</span><span>, </span><span style="font-style:italic;color:#969896;">// &lt;-- new
+</span><span>};
+</span></code></pre>
+<p>Then this is <code>resolve_func_decl</code>, and the inner parameters resolution, which is really just a cheap copy of <code>resolve_var_decl</code> itself rebranded <code>resolve_decl</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">resolve_func_decl</span><span>(
+</span><span>    bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate</span><span>,
+</span><span>    func_decl: </span><span style="font-weight:bold;color:#a71d5d;">*ast.FuncDecl</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(bp.variable_map.get(func_decl.name)) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>prev</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(prev.scope </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .local </span><span style="font-weight:bold;color:#a71d5d;">and</span><span> prev.linkage </span><span style="font-weight:bold;color:#a71d5d;">!=</span><span style="color:#0086b3;"> .external</span><span>)
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.DuplicateFunctionDecl;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.variable_map.put(bp.gpa, func_decl.name, .{
+</span><span>        .name </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.strings.get_or_put(bp.gpa, func_decl.name),
+</span><span>        .scope </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .local</span><span>,
+</span><span>        .linkage </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .external</span><span>,
+</span><span>    });
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> variable_map </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.variable_map.clone(bp.gpa);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer</span><span> variable_map.deinit(bp.gpa);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> variable_map.valueIterator();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>value</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>        value</span><span style="font-weight:bold;color:#a71d5d;">.* =</span><span> .{
+</span><span>            .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> value.name,
+</span><span>            .scope </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .parent</span><span>,
+</span><span>            .linkage </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> value.linkage,
+</span><span>        };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> inner_bp </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bp.into_ineer(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>variable_map);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> func_decl.params.iterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>param</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-style:italic;color:#969896;">// a cheap imitation of `resolve_var_decl`
+</span><span>        </span><span style="font-style:italic;color:#969896;">// should pribably be in its own function.
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(inner_bp.variable_map.get(param.name)) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>entry</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(entry.scope </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .local</span><span>)
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.DuplicateVariableDecl;
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> unique_name </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> inner_bp.make_temporary(param.name);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> inner_bp.variable_map.put(inner_bp.gpa, param.name, .{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> unique_name });
+</span><span>
+</span><span>        param</span><span style="font-weight:bold;color:#a71d5d;">.* =</span><span> .{ .idx </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> unique_name };
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(func_decl.block) </span><span style="font-weight:bold;color:#a71d5d;">|*</span><span>block</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_block(inner_bp, </span><span style="color:#0086b3;">null</span><span>, block);
+</span><span>}
+</span></code></pre>
+<p>One more thing, there is need to check that block level function declarations have no body. I am going to do that in <code>resolve_block</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">resolve_block</span><span>(
+</span><span>    bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate</span><span>,
+</span><span>    current_label: </span><span style="font-weight:bold;color:#a71d5d;">?utils.StringInterner.Idx</span><span>,
+</span><span>    block: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Block</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> block.body.iterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>item</span><span style="font-weight:bold;color:#a71d5d;">| switch </span><span>(item</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>) {
+</span><span style="color:#0086b3;">        .S </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>s</span><span style="font-weight:bold;color:#a71d5d;">| try </span><span>resolve_stmt(bp, current_label, s),
+</span><span style="color:#0086b3;">        .D </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>d</span><span style="font-weight:bold;color:#a71d5d;">| switch </span><span>(d</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>) {
+</span><span style="color:#0086b3;">            .F </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>f</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(f.block) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span style="color:#0086b3;">_</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.IllegalFuncDefinition
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_func_decl(bp, f),
+</span><span style="color:#0086b3;">            .V </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>v</span><span style="font-weight:bold;color:#a71d5d;">| try </span><span>resolve_var_decl(bp, v),
+</span><span>        },
+</span><span>    };
+</span><span>}
+</span></code></pre>
+<p>Before delving into type checking, the book suggests to run the test suite, but expect a number of failures. Thankfully, I can check the individual folders separately using the eye test, without running the test suite in the official manner, I can tell that the compiler is passing all the right files it should at this stage, even the ones in <code>invalid_types</code>.</p>
+<h2 id="type-checking">Type checking</h2>
+<p>The Book has the type checking done in its own pass. At first, I tried just stuffing the type checking logic right into the same identifier resolution pass. But the actual problem was that I needed a separate data structure anyway, since function declarations have to match even when they are in different scopes. So I am still doing it in the same run, but with a separate data structure.</p>
+<p>The type checking consists mostly of the following: not using the same identifier for both <code>int</code>s and functions, making sure functions always have the same number of parameters in all declarations, and make sure a function is not defined (with a body) twice.</p>
+<p>A new data structure would be needed to stuff this info, global throughout the whole file.<sup class="footnote-reference" id="fr-linker-1"><a href="#fn-linker">1</a></sup> A hashmap taking the unique identifiers as keys and their types as values. The type is either an integer or a function with defined arity (number of parameters). I also need to track whether a function has been defined or not.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> TypeMap </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.AutoHashMapUnmanaged(
+</span><span>    u32,
+</span><span>    Type,
+</span><span>);
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">const </span><span>Type </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    int,
+</span><span>    func: </span><span style="font-weight:bold;color:#a71d5d;">struct </span><span>{
+</span><span>        arity: </span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>,
+</span><span>        defined: </span><span style="font-weight:bold;color:#a71d5d;">bool</span><span>,
+</span><span>    },
+</span><span>};
+</span></code></pre>
+<p>Then adding a pointer to it to <code>Boilerplate</code>, and adjusting <code>resolve_prgm</code> as follows.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">resolve_prgm</span><span>(
+</span><span>    gpa: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    strings: </span><span style="font-weight:bold;color:#a71d5d;">*utils.StringInterner</span><span>,
+</span><span>    prgm: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Prgm</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>variable_map: </span><span style="font-weight:bold;color:#a71d5d;">VariableMap =</span><span style="color:#0086b3;"> .empty</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer</span><span> variable_map.deinit(gpa);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>type_map: </span><span style="font-weight:bold;color:#a71d5d;">TypeMap =</span><span style="color:#0086b3;"> .empty</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer</span><span> type_map.deinit(gpa);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate =</span><span> .{
+</span><span>        .gpa </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> gpa,
+</span><span>        .strings </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> strings,
+</span><span>        .variable_map </span><span style="font-weight:bold;color:#a71d5d;">= &amp;</span><span>variable_map,
+</span><span>        .type_map </span><span style="font-weight:bold;color:#a71d5d;">= &amp;</span><span>type_map,
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> prgm.funcs.iterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>item</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_func_decl(bp, item);
+</span><span>}
+</span></code></pre>
+<p>What follows next is lots of annoying boilerplate. I must make sure every time I add something to a <code>variable_map</code>, I am adding its new name (if any) to <code>type_map</code>. Hairier than usual logic, but should try to straighten it out before stuffing it in a <code>Boilerplate</code> method.</p>
+<p>For example, in <code>resolve_finc_decl</code>, adding a name to <code>variable_map</code> and <code>type_map</code> is done as follows:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> nname </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.strings.get_or_put(bp.gpa, func_decl.name);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.variable_map.put(bp.gpa, func_decl.name, .{
+</span><span>        .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> nname,
+</span><span>        .scope </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .local</span><span>,
+</span><span>        .linkage </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .external</span><span>,
+</span><span>    });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> gop </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.type_map.getOrPut(bp.gpa, nname.real_idx);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(gop.found_existing) {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(gop.value_ptr</span><span style="font-weight:bold;color:#a71d5d;">.* !=</span><span style="color:#0086b3;"> .func </span><span style="font-weight:bold;color:#a71d5d;">or
+</span><span>            gop.value_ptr.func.arity </span><span style="font-weight:bold;color:#a71d5d;">!=</span><span> func_decl.params.count())
+</span><span>        {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.TypeError;
+</span><span>        } </span><span style="font-weight:bold;color:#a71d5d;">else if </span><span>(gop.value_ptr.func.defined </span><span style="font-weight:bold;color:#a71d5d;">and
+</span><span>            func_decl.block </span><span style="font-weight:bold;color:#a71d5d;">!= </span><span style="color:#0086b3;">null</span><span>)
+</span><span>        {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.DuplicateFunctionDef;
+</span><span>        }
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else</span><span> gop.value_ptr</span><span style="font-weight:bold;color:#a71d5d;">.* =</span><span> .{ .func </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{
+</span><span>        .arity </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> func_decl.params.count(),
+</span><span>        .defined </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> func_decl.block </span><span style="font-weight:bold;color:#a71d5d;">!= </span><span style="color:#0086b3;">null</span><span>,
+</span><span>    } };
+</span><span>}
+</span></code></pre>
+<p>A similar thing to do in <code>resolve_var_decl</code>, and inside the small tidbit in <code>resolve_func_decl</code> that reeolves parameters. This is how it looks like.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> gop </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.type_map.getOrPut(bp.gpa, unique_name.real_idx);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(gop.found_existing) {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(gop.value_ptr</span><span style="font-weight:bold;color:#a71d5d;">.* !=</span><span style="color:#0086b3;"> .int</span><span>) {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.TypeError;
+</span><span>        }
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else</span><span> gop.value_ptr</span><span style="font-weight:bold;color:#a71d5d;">.* =</span><span style="color:#0086b3;"> .int</span><span>;
+</span><span>}
+</span></code></pre>
+<p>There does not seem enough shared logic right now to try and DRY these. Maybe later. What is left is checking these things in function calls and variable declarations. They are both very funny looking.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.@&quot;var&quot; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>name</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(bp.variable_map.get(name.name)) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>un</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(bp.type_map.get(un.name.real_idx)</span><span style="font-weight:bold;color:#a71d5d;">.? ==</span><span style="color:#0086b3;"> .int</span><span>) </span><span style="font-style:italic;color:#969896;">// unwrap optional
+</span><span>            expr</span><span style="font-weight:bold;color:#a71d5d;">.* =</span><span> .{ .@</span><span style="color:#183691;">&quot;var&quot; </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .idx </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> un.name } }
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.TypeError;
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else return error</span><span>.UndeclaredVariable;
+</span><span>},
+</span><span style="color:#0086b3;">.func_call </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>f</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(bp.variable_map.get(f.@</span><span style="color:#183691;">&quot;0&quot;</span><span>.name)) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>entry</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> t </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bp.type_map.get(entry.name.real_idx)</span><span style="font-weight:bold;color:#a71d5d;">.?</span><span>;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(t </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .func </span><span style="font-weight:bold;color:#a71d5d;">and
+</span><span>            t.func.arity </span><span style="font-weight:bold;color:#a71d5d;">==</span><span> f.@</span><span style="color:#183691;">&quot;1&quot;</span><span>.count())
+</span><span>        {
+</span><span>            f.@</span><span style="color:#183691;">&quot;0&quot; </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .idx </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> entry.name };
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> f.@</span><span style="color:#183691;">&quot;1&quot;</span><span>.iterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>item</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_expr(bp, item);
+</span><span>        } </span><span style="font-weight:bold;color:#a71d5d;">else return error</span><span>.TypeError;
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else return error</span><span>.UndeclaredFunction;
+</span><span>},
+</span></code></pre>
+<p>I <em>think</em> this should be it. I checked for functions being defined twice/ I checked that functions should be functions and types should be types. I checked all functions with the same name should have the same arity. <code>zig build</code> returns no errors. What is left?</p>
+<p>The proof of the pudding is in the test suite. Time to run the test suite. (which now applies <code>--latest-only</code> by default as not to take <em>too</em> long.)</p>
+<pre data-lang="sh" style="background-color:#ffffff;color:#323232;" class="language-sh "><code class="language-sh" data-lang="sh"><span>% paella ❱ zig build submit</span><span style="font-weight:bold;color:#a71d5d;"> --</span><span> --chapter 9 --stage validate
+</span><span>----------------------------------------------------------------------
+</span><span>Ran 61 tests in 157.089s
+</span><span>
+</span><span>OK
+</span></code></pre>
+<p><em>Phew</em>. Mind you this does not mean the logic is correct. It just means it is failing the ones it should fail and passing the ones it should pass. The full test suite passes as well, which is cool.</p>
+<p>I took the time to refactor out the common logic between function parameters and variable declarations. Zig's <code>comptime</code> allows some tricks that Rust would torture me for,<sup class="footnote-reference" id="fr-const-1"><a href="#fn-const">2</a></sup> forcing me to use a trait or some weird amalgamation of const generics. It turned out most of the logic is for identifiers, except for initializers in variable declarations. The new function follows.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">resolve_var_decl</span><span>(
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">comptime </span><span>T: </span><span style="font-weight:bold;color:#a71d5d;">enum </span><span>{ param, @</span><span style="color:#183691;">&quot;var&quot; </span><span>}, </span><span style="font-style:italic;color:#969896;">// anoynmous types yay
+</span><span>    bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate</span><span>,
+</span><span>    item: </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(</span><span style="font-weight:bold;color:#a71d5d;">T</span><span>) { </span><span style="font-style:italic;color:#969896;">// can simply be `if` but this is more readable i think
+</span><span style="color:#0086b3;">        .@&quot;var&quot; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; *</span><span>ast.VarDecl,
+</span><span style="color:#0086b3;">        .param </span><span style="font-weight:bold;color:#a71d5d;">=&gt; *</span><span>ast.Identifier,
+</span><span>    },
+</span><span>) Error</span><span style="font-weight:bold;color:#a71d5d;">!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> identifier </span><span style="font-weight:bold;color:#a71d5d;">= switch </span><span>(T) { </span><span style="font-style:italic;color:#969896;">// pulling out the common logic
+</span><span style="color:#0086b3;">        .@&quot;var&quot; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; &amp;</span><span>item.name,
+</span><span style="color:#0086b3;">        .param </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> item,
+</span><span>    };
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(bp.variable_map.get(identifier.name)) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>entry</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(entry.scope </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .local</span><span>)
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.DuplicateDecl;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> unique_name </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(identifier.name);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.variable_map.put(bp.gpa, identifier.name, .{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> unique_name });
+</span><span>
+</span><span>    { </span><span style="font-style:italic;color:#969896;">// TYPE CHECKING
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> gop </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.type_map.getOrPut(bp.gpa, unique_name.real_idx);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(gop.found_existing) {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(gop.value_ptr</span><span style="font-weight:bold;color:#a71d5d;">.* !=</span><span style="color:#0086b3;"> .int</span><span>)
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.TypeError;
+</span><span>        } </span><span style="font-weight:bold;color:#a71d5d;">else</span><span> gop.value_ptr</span><span style="font-weight:bold;color:#a71d5d;">.* =</span><span style="color:#0086b3;"> .int</span><span>;
+</span><span>    }
+</span><span>
+</span><span>    identifier</span><span style="font-weight:bold;color:#a71d5d;">.* =</span><span> .{ .idx </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> unique_name };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(T </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .@&quot;var&quot;</span><span>) </span><span style="font-style:italic;color:#969896;">// logic unique to declarations
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(item.init) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>expr</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_expr(bp, expr);
+</span><span>}
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// called like this, inside `resolve_func_decl`
+</span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(params.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>param</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_var_decl(.param, inner_bp, param);
+</span></code></pre>
+<p>I ran the test suite again (and the eye tests) after this and everything seems to work out.</p>
+<hr />
+<h2 id="internal-represntation">Internal Represntation</h2>
+<p>After a long drought, finally time to update the IR syntax tree and generation. Which means new assembly stuff later. Couldn't the Book stick to adding more control flow constructs for ever? Maybe function calls can be implemented by just jumping around. Is that a thing?</p>
+<p>The syntax tree updatss mirror the AST's.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> Identifier </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> utils.StringInterner.Idx; </span><span style="font-style:italic;color:#969896;">// type alias
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Prgm </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    funcs: std.ArrayListUnmanaged(FuncDef), </span><span style="font-style:italic;color:#969896;">// &lt;--
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>FuncDef </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    name: </span><span style="font-weight:bold;color:#a71d5d;">Identifier</span><span>,
+</span><span>    params: std.ArrayListUnmanaged(Identifier), </span><span style="font-style:italic;color:#969896;">// &lt;--
+</span><span>    instrs: std.ArrayListUnmanaged(Instr),
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Instr </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    func_call: </span><span style="font-weight:bold;color:#a71d5d;">struct </span><span>{
+</span><span>        name: </span><span style="font-weight:bold;color:#a71d5d;">Identifier</span><span>,
+</span><span>        args: std.ArrayListUnmanaged(Value),
+</span><span>        dst: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>,
+</span><span>    },
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// rest of the owl
+</span><span>};
+</span></code></pre>
+<p>And the rest is pretty much the same, sans a few updates to the pretty printers and deinitializers. Note that there are no function declarations, as they are discarded in this stage after being done with the type checking.</p>
+<p><code>prgm_emit_ir</code> is simply a small update from the one-function version to the many-functions version, skipping over declarations without bodies</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">prgm_emit_ir</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    strings: </span><span style="font-weight:bold;color:#a71d5d;">*utils.StringInterner</span><span>,
+</span><span>    prgm: </span><span style="font-weight:bold;color:#a71d5d;">*const ast.Prgm</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ir.Prgm </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>funcs: std.ArrayListUnmanaged(ir.FuncDef) </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> .initCapacity(
+</span><span>        alloc,
+</span><span>        prgm.funcs.len,
+</span><span>    );
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> prgm.funcs.constIterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>f</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(f.block) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span style="color:#0086b3;">_</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{ </span><span style="font-style:italic;color:#969896;">// skip empty declarations
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> fir </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>func_def_emit_ir(alloc, strings, f);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> funcs.append(alloc, fir);
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .funcs </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> funcs };
+</span><span>}
+</span></code></pre>
+<p><code>func_def_emit_ir</code> is also almost exactly the same, except that the identifiers are moved over.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">func_def_emit_ir</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    strings: </span><span style="font-weight:bold;color:#a71d5d;">*utils.StringInterner</span><span>,
+</span><span>    func_def: </span><span style="font-weight:bold;color:#a71d5d;">*const ast.FuncDecl</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ir.FuncDef </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> strings.get_or_put(alloc, func_def.name);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>params: std.ArrayListUnmanaged(utils.StringInterner.Idx) </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> .initCapacity(
+</span><span>        alloc,
+</span><span>        func_def.params.count(),
+</span><span>    );
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> func_def.params.constIterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>param</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> params.append(alloc, param.idx);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>instrs: std.ArrayListUnmanaged(ir.Instr) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .empty</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate =</span><span> .{
+</span><span>        .alloc </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> alloc,
+</span><span>        .strings </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> strings,
+</span><span>        .instrs </span><span style="font-weight:bold;color:#a71d5d;">= &amp;</span><span>instrs,
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>block_emit_ir(bp, </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>func_def.block</span><span style="font-weight:bold;color:#a71d5d;">.?</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> instrs.append(alloc, .{ .ret </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .constant </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0 </span><span>} });
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> name, .params </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> params, .instrs </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> instrs };
+</span><span>}
+</span></code></pre>
+<p>Function call expressions are new, even though they follow the same pattern as all other expressions.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.func_call </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>f</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>args: std.ArrayListUnmanaged(ir.Value) </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> .initCapacity(
+</span><span>        bp.alloc,
+</span><span>        f.@</span><span style="color:#183691;">&quot;1&quot;</span><span>.count(),
+</span><span>    );
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dst </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .variable </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(</span><span style="color:#183691;">&quot;fn&quot;</span><span>) };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> f.@</span><span style="color:#183691;">&quot;1&quot;</span><span>.constIterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>e</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> v </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, e);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> args.append(bp.alloc, v);
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .func_call </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{
+</span><span>        .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> f.@</span><span style="color:#183691;">&quot;0&quot;</span><span>.idx,
+</span><span>        .args </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> args,
+</span><span>        .dst </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> dst,
+</span><span>    } });
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> dst;
+</span><span>},
+</span></code></pre>
+<p>The last thing left to do here is to make sure that functon declaration as block items are skipped as well.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">block_emit_ir</span><span>(
+</span><span>    bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate</span><span>,
+</span><span>    block: </span><span style="font-weight:bold;color:#a71d5d;">*const ast.Block</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> block.body.constIterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>item</span><span style="font-weight:bold;color:#a71d5d;">| switch </span><span>(item</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>) {
+</span><span style="color:#0086b3;">        .S </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>s</span><span style="font-weight:bold;color:#a71d5d;">| try </span><span>stmt_emit_ir(bp, s),
+</span><span style="color:#0086b3;">        .D </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>d</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(d </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .V</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>var_decl_emit_ir(bp, </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>d.V), </span><span style="font-style:italic;color:#969896;">// &lt;-
+</span><span>    };
+</span><span>}
+</span></code></pre>
+<h3 id="small-detour-back-to-type-checking">Small Detour Back to Type Checking</h3>
+<p>I am honestly not quite sure about some decisions up to now. For example, if function declarations are discarded, why are their parameters given unique identities at all? Maybe I should go back and simply check the count (and ideally the types, but there are no types in here). This would change the end of <code>resolve_func_decl</code> to the following, instead of the if statement only encasing the last line. Since the count is checked earlier</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">if </span><span>(func_decl.block) </span><span style="font-weight:bold;color:#a71d5d;">|*</span><span>block</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> params </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> func_decl.params.iterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(params.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>param</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_var_decl(.param, inner_bp, param);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_block(inner_bp, </span><span style="color:#0086b3;">null</span><span>, block);
+</span><span>}
+</span></code></pre>
+<p>This passes all validations tests, except one.</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-style:italic;color:#969896;">/* Duplicate parameter names are illegal in function declarations
+</span><span style="font-style:italic;color:#969896;">   as well as definitions */
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">foo</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">int </span><span>a, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>a);
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return </span><span>foo(</span><span style="color:#0086b3;">1</span><span>, </span><span style="color:#0086b3;">2</span><span>);
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">foo</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">int </span><span>a, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>b) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> a </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> b;
+</span><span>}
+</span></code></pre>
+<p>Ah well. Amusingly, at least according to the LLM I asked, <code>int foo(int, int)</code> <em>is</em> a legal declaration. Anyway, this was a failed detour.</p>
+<hr />
+<h2 id="assembly-generation">Assembly Generation</h2>
+<p>This is the first serious brush in the Book with the System V ABI, the most common binary interface for Unixes. As there are currently no types more complex than <code>int</code>, all the compiler needs to worry about is stuffing parameters in the right registers. (And for function bodies, retreiving them from the right registers). The IR has not concerned itself with this, relying on the surrounding passes to make sense out of it.</p>
+<p>In my Rust implementation, I used clever iterator combinators to write the logic for this section. I am kind of curious to see how it will turn out in Zig.</p>
+<p>The first step, as usual, is to update the assembly syntax tree. A program needs to be redefined as a list of functions, and there are new instructions and new registers. Some necessary refactorings should be timed now as well. This is <code>assembly.Prgm</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Prgm </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    funcs: std.ArrayListUnmanaged(FuncDef),
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">fixup</span><span>(
+</span><span>        self: </span><span style="font-weight:bold;color:#a71d5d;">*</span><span style="color:#62a35c;">@This</span><span>(),
+</span><span>        alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    ) </span><span style="font-weight:bold;color:#a71d5d;">!void </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(self.funcs.items) </span><span style="font-weight:bold;color:#a71d5d;">|*</span><span>func</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>            </span><span style="font-style:italic;color:#969896;">// functions called here changed from taking *Prgm to *FuncDef
+</span><span>            </span><span style="font-style:italic;color:#969896;">// ideally this should live under FuncDef, but this is fine for now
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> depth </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> pass_pseudo.replace_pseudos(alloc, func);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> func.instrs.insert(alloc, </span><span style="color:#0086b3;">0</span><span>, .{
+</span><span>                .allocate_stack </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">@abs</span><span>(depth),
+</span><span>            });
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> pass_fixup.fixup_instrs(alloc, func);
+</span><span>        }
+</span><span>    }
+</span></code></pre>
+<p>The new instructions are simple additions. However, I am using two type aliases here: <code>Depth</code> for an unsigned version of stack depth, and <code>Identifier</code> for <code>utils.StringInterner.Idx</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>allocate_stack: </span><span style="font-weight:bold;color:#a71d5d;">Depth</span><span>, </span><span style="font-style:italic;color:#969896;">// old
+</span><span>dealloc_stack: </span><span style="font-weight:bold;color:#a71d5d;">Depth</span><span>,
+</span><span>
+</span><span>push: </span><span style="font-weight:bold;color:#a71d5d;">Operand</span><span>,
+</span><span>call: </span><span style="font-weight:bold;color:#a71d5d;">Identifier</span><span>,
+</span></code></pre>
+<p>And aside from the new Registers, which I will not bore you with, this is pretty much it.<sup class="footnote-reference" id="fr-honesty-1"><a href="#fn-honesty">3</a></sup> Implementing the codegen is the next step. parameters in function definitions need to be taken from their correct register and stack positions; and function calls need to stuff them there. <code>prgm_to_asm</code>, the main entry point, is straightforward.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">prgm_to_asm</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    prgm: </span><span style="font-weight:bold;color:#a71d5d;">ir.Prgm</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!assembly.Prgm </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>funcs: std.ArrayListUnmanaged(assembly.FuncDef) </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> .initCapacity(
+</span><span>        alloc,
+</span><span>        prgm.funcs.items.len,
+</span><span>    );
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(prgm.funcs.items) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>func</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> funcs.append(
+</span><span>            alloc,
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>func_def_to_asm(alloc, func),
+</span><span>        );
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .funcs </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> funcs };
+</span><span>}
+</span></code></pre>
+<p>For functions, it is slightly different. The first six parameters should be passed in these registers in this specific order: <code>DI</code>, <code>SI</code>, <code>DX</code>, <code>CX</code>, <code>R8</code>, and <code>R9</code>. Remaining arguments are pushed into the stack in <em>reverse order</em>. So normally, I will just assign a constant for them registers.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const </span><span>REGISTERS: [</span><span style="color:#0086b3;">6</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">assembly.Operand.Register =
+</span><span>    .{</span><span style="color:#0086b3;"> .DI</span><span>,</span><span style="color:#0086b3;"> .SI</span><span>,</span><span style="color:#0086b3;"> .DX</span><span>,</span><span style="color:#0086b3;"> .CX</span><span>,</span><span style="color:#0086b3;"> .R8</span><span>,</span><span style="color:#0086b3;"> .R9 </span><span>};
+</span></code></pre>
+<p>In <code>func_def_to_asm</code> itself, a zipped <code>for</code> loop is perhaps the most straightforward way of doing this. The first section is simple enough. And since the remaining paramters are pushed into the stack at function call in reverse order, they are in the correct order here. Starting from a 16 <code>stack</code> offset, they are moved one by one. Luckily, this same loop can be used!</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">for </span><span>(func_def.params.items, 0</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>param, idx</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(idx </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span> REGISTERS.len)
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> instrs.append(alloc, .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(
+</span><span>            .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> REGISTERS[idx] },
+</span><span>            .{ .pseudo </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> param },
+</span><span>        ) })
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">else </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> offset </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>(idx </span><span style="font-weight:bold;color:#a71d5d;">-</span><span> REGISTERS.len </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">2</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">* </span><span style="color:#0086b3;">8</span><span>; </span><span style="font-style:italic;color:#969896;">// 16, 24, etc
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> instrs.append(alloc, .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(
+</span><span>            .{ .stack </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">@intCast</span><span>(offset) },
+</span><span>            .{ .pseudo </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> param },
+</span><span>        ) });
+</span><span>    };
+</span></code></pre>
+<p>Implementing function calls is a lot more involved. First, the stack needs to be aligned properly at 16, as per the System V ABI. Copying the passed in expressions to the input registers is easy, but reversing the rest of them requires some shenanigans. First is to have a stack allocated array with the maximum possible size because it is unknown at the outset what the size of the returned slice could be.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-style:italic;color:#969896;">// the return is of unknown size.
+</span><span style="font-style:italic;color:#969896;">// maximum possible size is parameter count * 2 + 4
+</span><span style="font-weight:bold;color:#a71d5d;">var </span><span>ret: std.ArrayListUnmanaged(assembly.Instr) </span><span style="font-weight:bold;color:#a71d5d;">=
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> .initCapacity(alloc, c.args.items.len </span><span style="font-weight:bold;color:#a71d5d;">* </span><span style="color:#0086b3;">2 </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">4</span><span>);
+</span></code></pre>
+<p>Then calculate the amount of arguments in the stack and the needed padding to 16. Zig has a saturating subtraction operator <code>-|</code> that is perfect for this.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> depth </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> c.args.items.len </span><span style="font-weight:bold;color:#a71d5d;">-|</span><span> REGISTERS.len;
+</span><span style="font-weight:bold;color:#a71d5d;">const </span><span>padding: </span><span style="font-weight:bold;color:#a71d5d;">assembly.Instr.Depth =
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(depth </span><span style="font-weight:bold;color:#a71d5d;">% </span><span style="color:#0086b3;">2 </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">0</span><span>) </span><span style="color:#0086b3;">8 </span><span style="font-weight:bold;color:#a71d5d;">else </span><span style="color:#0086b3;">0</span><span>;
+</span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(padding </span><span style="font-weight:bold;color:#a71d5d;">&gt; </span><span style="color:#0086b3;">0</span><span>)
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> ret.append(alloc, .{ .allocate_stack </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> padding }); </span><span style="font-style:italic;color:#969896;">// 1
+</span></code></pre>
+<p>The numbering in the comments is me keeping track of instructions that do not depend on parameters count. After that comes putting the values in their respective registers, and the stack.<sup class="footnote-reference" id="fr-registers-1"><a href="#fn-registers">4</a></sup></p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">for </span><span>(c.args.items, 0</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>arg, idx</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(idx </span><span style="font-weight:bold;color:#a71d5d;">&gt;=</span><span> REGISTERS.len) </span><span style="font-weight:bold;color:#a71d5d;">break</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> ret.append(alloc, .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(
+</span><span>        .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> REGISTERS[idx] },
+</span><span>        value_to_asm(arg),
+</span><span>    ) });
+</span><span>}
+</span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(0</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>depth) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>idx</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> v_ir </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> c.args.items[c.args.items.len </span><span style="font-weight:bold;color:#a71d5d;">- </span><span style="color:#0086b3;">1 </span><span style="font-weight:bold;color:#a71d5d;">-</span><span> idx];
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> v_asm </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>value_to_asm(v_ir);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(v_asm) {
+</span><span style="color:#0086b3;">        .imm</span><span>,</span><span style="color:#0086b3;"> .reg </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> ret.append(alloc, .{ .push </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> v_asm }),
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; try</span><span> ret.appendSlice(alloc, &amp;.{
+</span><span>            .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(v_asm, .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .AX </span><span>}) },
+</span><span>            .{ .push </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .AX </span><span>} },
+</span><span>        }),
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>I think this should work. <code>0..depth</code> will be .. nothing, and the loop will not run. If it is larger, it starts from the last item (at index <code>len - , 1</code>), then subtracts the current index of the loop. And finally, dealing with the return value, and returning the slice.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-style:italic;color:#969896;">// emit call instruction
+</span><span style="font-weight:bold;color:#a71d5d;">try</span><span> ret.append(alloc, .{ .call </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> c.name }); </span><span style="font-style:italic;color:#969896;">// 2
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> bytes_to_remove </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">8 </span><span style="font-weight:bold;color:#a71d5d;">*</span><span> depth </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> padding;
+</span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(bytes_to_remove </span><span style="font-weight:bold;color:#a71d5d;">!= </span><span style="color:#0086b3;">0</span><span>)
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> ret.append(alloc, .{ .dealloc_stack </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bytes_to_remove }); </span><span style="font-style:italic;color:#969896;">// 3
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">try</span><span> ret.append(alloc, .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(
+</span><span>    .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .AX </span><span>},
+</span><span>    value_to_asm(c.dst),
+</span><span>) }); </span><span style="font-style:italic;color:#969896;">// 4
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">return</span><span> ret.items;
+</span></code></pre>
+<p>Doing the eye test for codegen, I quickly noticed something stupid. I am moving the register's value to an immutable. Oops.</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">add</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">int </span><span>x, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>y);
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return </span><span>add(</span><span style="color:#0086b3;">1</span><span>, </span><span style="color:#0086b3;">2</span><span>);
+</span><span>}
+</span><span style="font-style:italic;color:#969896;">// PROGRAM
+</span><span style="font-style:italic;color:#969896;">// 	FUNCTION main
+</span><span style="font-style:italic;color:#969896;">// 		allocate	4
+</span><span style="font-style:italic;color:#969896;">// 		allocate	8
+</span><span style="font-style:italic;color:#969896;">// 		mov	DI -&gt; imm 1
+</span><span style="font-style:italic;color:#969896;">// 		mov	SI -&gt; imm 2
+</span><span style="font-style:italic;color:#969896;">// 		call	.Ladd
+</span><span style="font-style:italic;color:#969896;">// 		deallocate	8
+</span><span style="font-style:italic;color:#969896;">// 		mov	AX -&gt; stack -4
+</span><span style="font-style:italic;color:#969896;">// 		mov	stack -4 -&gt; AX
+</span><span style="font-style:italic;color:#969896;">// 		ret
+</span><span style="font-style:italic;color:#969896;">// 		mov	imm 0 -&gt; AX
+</span><span style="font-style:italic;color:#969896;">// 		ret
+</span></code></pre>
+<p>Fixing that by switching two lines, the eye test passes fine. The test suite does not hit any errors (and, as a reminder, does not test beyond success a nd failure).</p>
+<p>After that comes the annoying fixup pass adjustments. The depth returned by <code>replace_pseudos</code> is adjusted to save the depth of each function in a field in the function definition. And also, when allocating, rounding that up to the nearest multiple of 16.</p>
+<p>There is a neat trick to round up a number, <code>n</code>, to the nearest multiple of 16. Basically <code>(n + 15) &amp; ~15</code>. Unfortunately, Zig makes this a pain to write because the integer type inference is not clever enough to understand <code>~15</code>.</p>
+<p>There in the standard library is a helpful function to do that math: <code>std.mem.alignForward</code>. Kindly pointed to me by the Zig Discord. So I added this bit at the end of <code>replace_pseudos</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>func_def.depth </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">@intCast</span><span>(pseudo_map.count() </span><span style="font-weight:bold;color:#a71d5d;">* </span><span style="color:#0086b3;">4</span><span>);
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> aligned </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.mem.alignForward(assembly.Instr.Depth, func_def.depth, </span><span style="color:#0086b3;">16</span><span>);
+</span><span style="font-weight:bold;color:#a71d5d;">try</span><span> func_def.instrs.insert(alloc, </span><span style="color:#0086b3;">0</span><span>, .{ .allocate_stack </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> aligned });
+</span></code></pre>
+<p>So, time to actually emit the assembly.</p>
+<h2 id="code-emission">Code Emission</h2>
+<p>The changes here are pretty small. The new instructions are one thing, but there are new registers and new register sizes for <code>push</code>, which takes 8-width registers. The logic for printing registers got pretty large so I put it in its own function.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">emit_register</span><span>(
+</span><span>    reg: </span><span style="font-weight:bold;color:#a71d5d;">Operand.Register</span><span>,
+</span><span>    width: </span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>,
+</span><span>    writer: </span><span style="font-weight:bold;color:#a71d5d;">anytype</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!void </span><span>{
+</span><span>    p: </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(width) {
+</span><span>        </span><span style="color:#0086b3;">1 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; switch </span><span>(reg) {
+</span><span style="color:#0086b3;">            .AX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%al&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .DX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%dl&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .CX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%cl&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .DI </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%dil&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .SI </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%sil&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .R8 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r8b&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .R9 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r9b&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .R10 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r10b&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .R11 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r11b&quot;</span><span>, .{}),
+</span><span>        },
+</span><span>        </span><span style="color:#0086b3;">4 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; switch </span><span>(reg) {
+</span><span style="color:#0086b3;">            .AX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%eax&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .DX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%edx&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .CX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%ecx&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .DI </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%edi&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .SI </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%esi&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .R8 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r8d&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .R9 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r9d&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .R10 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r10d&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .R11 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r11d&quot;</span><span>, .{}),
+</span><span>        },
+</span><span>        </span><span style="color:#0086b3;">8 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; switch </span><span>(reg) {
+</span><span style="color:#0086b3;">            .AX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%rax&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .DX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%rdx&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .CX </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%rcx&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .DI </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%rdi&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .SI </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%rsi&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .R8 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r8&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .R9 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r9&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .R10 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r10&quot;</span><span>, .{}),
+</span><span style="color:#0086b3;">            .R11 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;%r11&quot;</span><span>, .{}),
+</span><span>        },
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; continue</span><span> :p </span><span style="color:#0086b3;">4</span><span>, </span><span style="font-style:italic;color:#969896;">// default case
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>And then in the format function just do the following. There is a bit of redundancy regarding the 4 as a default case. You are not paranoid if they <em>are</em> out to get you!</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.reg </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>r</span><span style="font-weight:bold;color:#a71d5d;">| try </span><span>emit_register(r, options.width </span><span style="font-weight:bold;color:#a71d5d;">orelse </span><span style="color:#0086b3;">4</span><span>, writer),
+</span></code></pre>
+<p>Running the test suite, I get into 16 failures. Oh come on.</p>
+<p>Most of them seem to be <code>UnrecognizedFlag</code>, which is the error I have in the compiler driver for flags that are unrecognized. That is what I get for not reading the text and jumping straight to the tables. There is a tidbit there about recognizing a <code>-c</code> flag, which is the <code>gcc</code> flag for creating object files instead of executables.</p>
+<p>This is a small change to the argument parser. That is the new one:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">parse_args</span><span>() </span><span style="font-weight:bold;color:#a71d5d;">!Args </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> args </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.process.args();
+</span><span>    </span><span style="color:#0086b3;">_ </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> args.skip();
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>path: </span><span style="font-weight:bold;color:#a71d5d;">?</span><span>[:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8 = </span><span style="color:#0086b3;">null</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>mode: </span><span style="font-weight:bold;color:#a71d5d;">Mode =</span><span style="color:#0086b3;"> .compile</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> c_flag </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">false</span><span>; </span><span style="font-style:italic;color:#969896;">// new
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(args.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>arg</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(arg[</span><span style="color:#0086b3;">0</span><span>] </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#183691;">&#39;-&#39;</span><span>) {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(arg[</span><span style="color:#0086b3;">1</span><span>] </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#183691;">&#39;c&#39;</span><span>) </span><span style="font-style:italic;color:#969896;">// new
+</span><span>                c_flag </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">true
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>                mode </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.meta.stringToEnum(Mode, arg[2</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>]) </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.UnrecognizedFlag;
+</span><span>        } </span><span style="font-weight:bold;color:#a71d5d;">else if </span><span>(path </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">null</span><span>)
+</span><span>            path </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> arg
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.PathDuplicated;
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{
+</span><span>        .path </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> path </span><span style="font-weight:bold;color:#a71d5d;">orelse return error</span><span>.PathNotFound,
+</span><span>        .mode </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> mode,
+</span><span>        .c_flag </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> c_flag, </span><span style="font-style:italic;color:#969896;">// new
+</span><span>    };
+</span><span>}
+</span></code></pre>
+<p>And mugh below that, when calling the assembler, the <code>-c</code> flag is passed if <code>c_flag</code> is true. And changing the extension to <code>.o</code>. So it becomes the following (changing the extension itself is done elsewhere in a bit of rather annoying code). This is probably the nicest way of doing it.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>{ </span><span style="font-style:italic;color:#969896;">// assembler
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> child </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.process.Child.init(
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(args.c_flag)
+</span><span>            &amp;.{ </span><span style="color:#183691;">&quot;gcc&quot;</span><span>, </span><span style="color:#183691;">&quot;-c&quot;</span><span>, asm_out, </span><span style="color:#183691;">&quot;-o&quot;</span><span>, obj }
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>            &amp;.{ </span><span style="color:#183691;">&quot;gcc&quot;</span><span>, asm_out, </span><span style="color:#183691;">&quot;-o&quot;</span><span>, exe },
+</span><span>        gpa,
+</span><span>    );
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> term </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> child.spawnAndWait();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(</span><span style="font-weight:bold;color:#a71d5d;">!</span><span>std.meta.eql(term, .{ .Exited </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0 </span><span>}))
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.AssemblerFail;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> std.fs.cwd().deleteFile(asm_out); </span><span style="font-style:italic;color:#969896;">// cleanup
+</span><span>}
+</span></code></pre>
+<p>Now running the test suite for real.</p>
+<hr />
+<h2 id="debugging">Debugging</h2>
+<p>On the plud side, all the programs ar ecompiling and running. On the negative side, I got a lot of bad return codes. There are logic mistakes. Also 3 errors relating to unicode and timeouts? I do not get it. The test suite's output is generally jumbled up and I find it hard to process. Having said that, the easiest way to attack the problem is to look at the individual files and compiles them myself.</p>
+<h3 id="unicodedecodeerror">UnicodeDecodeError</h3>
+<p>This is one of the weird errors, Nora Sandler's comments and all. The program should call the system's <code>putchar</code>, which prints a character to standard out.</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-weight:bold;color:#a71d5d;">#ifdef</span><span> SUPPRESS_WARNINGS
+</span><span style="font-weight:bold;color:#a71d5d;">#pragma</span><span> GCC diagnostic ignored &quot;-Wunused-parameter&quot;
+</span><span style="font-weight:bold;color:#a71d5d;">#endif
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">putchar</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">int </span><span>c);
+</span><span>
+</span><span style="font-style:italic;color:#969896;">/* Make sure we can correctly manage calling conventions from the callee side
+</span><span style="font-style:italic;color:#969896;"> * (by accessing parameters, including parameters on the stack) and the caller side
+</span><span style="font-style:italic;color:#969896;"> * (by calling a standard library function) in the same function
+</span><span style="font-style:italic;color:#969896;"> */
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">foo</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">int </span><span>a, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>b, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>c, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>d, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>e, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>f, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>g, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>h) {
+</span><span>    </span><span style="color:#62a35c;">putchar</span><span>(h);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> a </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> g;
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return </span><span>foo(</span><span style="color:#0086b3;">1</span><span>, </span><span style="color:#0086b3;">2</span><span>, </span><span style="color:#0086b3;">3</span><span>, </span><span style="color:#0086b3;">4</span><span>, </span><span style="color:#0086b3;">5</span><span>, </span><span style="color:#0086b3;">6</span><span>, </span><span style="color:#0086b3;">7</span><span>, </span><span style="color:#0086b3;">65</span><span>);
+</span><span>}
+</span></code></pre>
+<p>This is the output for each stage.</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>PARSING
+</span><span>	FUNCTION putchar c
+</span><span>	FUNCTION foo a b c d e f g h
+</span><span>		(putchar h);
+</span><span>		RETURN (+ a g)
+</span><span>	FUNCTION main
+</span><span>		RETURN (foo 1 2 3 4 5 6 7 65)
+</span><span>================================
+</span><span>VALIDATION
+</span><span>	FUNCTION putchar c.0
+</span><span>	FUNCTION foo a.1 b.2 c.3 d.4 e.5 f.6 g.7 h.8
+</span><span>		(putchar h.8);
+</span><span>		RETURN (+ a.1 g.7)
+</span><span>	FUNCTION main
+</span><span>		RETURN (foo 1 2 3 4 5 6 7 65)
+</span><span>================================
+</span><span>IR
+</span><span>	FUNCTION foo
+</span><span>		fn.9 &lt;- putchar(h.8)
+</span><span>		add.10 &lt;- a.1 + g.7
+</span><span>		ret add.10
+</span><span>		ret 0
+</span><span>	FUNCTION main
+</span><span>		fn.11 &lt;- foo(1, 2, 3, 4, 5, 6, 7, 65)
+</span><span>		ret fn.11
+</span><span>		ret 0
+</span><span>================================
+</span><span>CODEGEN
+</span><span>	FUNCTION foo
+</span><span>		allocate	48
+</span><span>		mov	DI -&gt; stack -4
+</span><span>		mov	SI -&gt; stack -8
+</span><span>		mov	DX -&gt; stack -12
+</span><span>		mov	CX -&gt; stack -16
+</span><span>		mov	R8 -&gt; stack -20
+</span><span>		mov	R9 -&gt; stack -24
+</span><span>		mov	stack 16 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -28
+</span><span>		mov	stack 24 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -32
+</span><span>		allocate	8
+</span><span>		mov	stack -32 -&gt; DI
+</span><span>		call	.Lputchar
+</span><span>		deallocate	8
+</span><span>		mov	AX -&gt; stack -36
+</span><span>		mov	stack -4 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -40
+</span><span>		mov	stack -28 -&gt; R10
+</span><span>		add	R10 -&gt; stack -40
+</span><span>		mov	stack -40 -&gt; AX
+</span><span>		ret
+</span><span>		mov	imm 0 -&gt; AX
+</span><span>		ret
+</span><span>	FUNCTION main
+</span><span>		allocate	16
+</span><span>		allocate	8
+</span><span>		mov	imm 1 -&gt; DI
+</span><span>		mov	imm 2 -&gt; SI
+</span><span>		mov	imm 3 -&gt; DX
+</span><span>		mov	imm 4 -&gt; CX
+</span><span>		mov	imm 5 -&gt; R8
+</span><span>		mov	imm 6 -&gt; R9
+</span><span>		push	imm 65
+</span><span>		push	imm 7
+</span><span>		call	.Lfoo
+</span><span>		deallocate	24
+</span><span>		mov	AX -&gt; stack -4
+</span><span>		mov	stack -4 -&gt; AX
+</span><span>		ret
+</span><span>		mov	imm 0 -&gt; AX
+</span><span>		ret
+</span></code></pre>
+<p>Hold on, before going into assembly, I spot a weird thing here. Why is the call to <code>foo</code> is preceded by <code>.L</code>. This is probably a formatting error which does not matter. But more importantly, the numbers for deallocations seem weird. Why is it deallocating 24? Let's review the logic in <code>instr_to_asm</code> in <code>.func_call</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> bytes_to_remove </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">8 </span><span style="font-weight:bold;color:#a71d5d;">*</span><span> depth </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> padding;
+</span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(bytes_to_remove </span><span style="font-weight:bold;color:#a71d5d;">!= </span><span style="color:#0086b3;">0</span><span>)
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> ret.append(alloc, .{ .dealloc_stack </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bytes_to_remove }); </span><span style="font-style:italic;color:#969896;">// 3
+</span></code></pre>
+<p>Eh, this makes sense. Counting the arguments passed on the stack there, there are 2. So why is there padding?</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const </span><span>padding: </span><span style="font-weight:bold;color:#a71d5d;">assembly.Instr.Depth =
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(depth </span><span style="font-weight:bold;color:#a71d5d;">% </span><span style="color:#0086b3;">2 </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">0</span><span>) </span><span style="color:#0086b3;">8 </span><span style="font-weight:bold;color:#a71d5d;">else </span><span style="color:#0086b3;">0</span><span>; </span><span style="font-style:italic;color:#969896;">// &lt;--- here
+</span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(padding </span><span style="font-weight:bold;color:#a71d5d;">!= </span><span style="color:#0086b3;">0</span><span>)
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> ret.append(alloc, .{ .allocate_stack </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> padding }); </span><span style="font-style:italic;color:#969896;">// 1
+</span></code></pre>
+<p>Oh I am assigning the padding in reverse. If the number of arguments is even, there should be no padding. Silly me.</p>
+<p>This does not actually deal with the error I got for this file, which is this:</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>UnicodeDecodeError: &#39;utf-8&#39; codec can&#39;t decode byte 0x90 in position 0: invalid start byte
+</span></code></pre>
+<p>This might be the valued printed by <code>putchar</code> failing to read. However, only way to know is to run the test suit again.</p>
+<pre data-lang="sh" style="background-color:#ffffff;color:#323232;" class="language-sh "><code class="language-sh" data-lang="sh"><span>% paella ❱ zig build submit --release</span><span style="font-weight:bold;color:#a71d5d;">=</span><span>safe</span><span style="font-weight:bold;color:#a71d5d;">  --</span><span> --chapter 9
+</span><span>
+</span><span style="font-style:italic;color:#969896;"># many moths later
+</span><span>----------------------------------------------------------------------
+</span><span>Ran 61 tests in 60.822s
+</span><span>
+</span><span>FAILED (failures=12)
+</span></code></pre>
+<p>Hey at least no weird UTF-8 errors. That's 7 less failures than last time (which was 16 failures and 3 errors).</p>
+<h3 id="assertionerror">AssertionError</h3>
+<blockquote>
+<p>Note: Please do not rad this section. It is embarrassing.</p>
+</blockquote>
+<p>This is a more readable error than the last one.</p>
+<pre data-lang="sh" style="background-color:#ffffff;color:#323232;" class="language-sh "><code class="language-sh" data-lang="sh"><span>AssertionError: Incorrect behavior in chapter_9/valid/stack_arguments/test_for_memory_leaks
+</span><span>* Bad return code: expected 1 and got 0
+</span></code></pre>
+<p>I can work with this. This is the C file in question. These are a lot of arguments.</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-style:italic;color:#969896;">/* Make sure stack arguments are deallocated correctly after returning from a function call; also test passing variables as stack arguments */
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">#ifdef</span><span> SUPPRESS_WARNINGS
+</span><span style="font-weight:bold;color:#a71d5d;">#pragma</span><span> GCC diagnostic ignored &quot;-Wunused-parameter&quot;
+</span><span style="font-weight:bold;color:#a71d5d;">#endif
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">lots_of_args</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">int </span><span>a, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>b, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>c, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>d, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>e, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>f, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>g, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>h, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>i, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>j, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>k, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>l, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>m, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>n, </span><span style="font-weight:bold;color:#a71d5d;">int </span><span>o) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> l </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> o;
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> ret </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(</span><span style="font-weight:bold;color:#a71d5d;">int</span><span> i </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0</span><span>; i </span><span style="font-weight:bold;color:#a71d5d;">&lt; </span><span style="color:#0086b3;">10000000</span><span>; i </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> i </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">1</span><span>) {
+</span><span>        ret </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>lots_of_args(</span><span style="color:#0086b3;">1</span><span>, </span><span style="color:#0086b3;">2</span><span>, </span><span style="color:#0086b3;">3</span><span>, </span><span style="color:#0086b3;">4</span><span>, </span><span style="color:#0086b3;">5</span><span>, </span><span style="color:#0086b3;">6</span><span>, </span><span style="color:#0086b3;">7</span><span>, </span><span style="color:#0086b3;">8</span><span>, </span><span style="color:#0086b3;">9</span><span>, </span><span style="color:#0086b3;">10</span><span>, </span><span style="color:#0086b3;">11</span><span>, ret, </span><span style="color:#0086b3;">13</span><span>, </span><span style="color:#0086b3;">14</span><span>, </span><span style="color:#0086b3;">15</span><span>);
+</span><span>    }
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> ret </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">150000000</span><span>;
+</span><span>}
+</span></code></pre>
+<p>I will skip the whole parsing to IR thing and simply give you here the last codegen, with added comments. It is <em>huge</em>.</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>PROGRAM
+</span><span>	FUNCTION lots_of_args
+</span><span>		allocate	64
+</span><span>		mov	DI -&gt; stack -4		; a
+</span><span>		mov	SI -&gt; stack -8		; b
+</span><span>		mov	DX -&gt; stack -12		; c
+</span><span>		mov	CX -&gt; stack -16		; d
+</span><span>		mov	R8 -&gt; stack -20		; e
+</span><span>		mov	R9 -&gt; stack -24		; f
+</span><span>		mov	stack 16 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -28	; g
+</span><span>		mov	stack 24 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -32	; h
+</span><span>		mov	stack 32 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -36	; i
+</span><span>		mov	stack 40 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -40	; j
+</span><span>		mov	stack 48 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -44	; k
+</span><span>		mov	stack 56 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -48	; l
+</span><span>		mov	stack 64 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -52	; m
+</span><span>		mov	stack 72 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -56	; n
+</span><span>		mov	stack 80 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -60	; o
+</span><span>		mov	stack -48 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -64	; l
+</span><span>		mov	stack -60 -&gt; R10	; o
+</span><span>		add	R10 -&gt; stack -64	; l + o
+</span><span>		mov	stack -64 -&gt; AX
+</span><span>		ret
+</span><span>		mov	imm 0 -&gt; AX
+</span><span>		ret
+</span><span>	FUNCTION main
+</span><span>		allocate	32
+</span><span>		mov	imm 0 -&gt; stack -4	; ret
+</span><span>		mov	imm 0 -&gt; stack -8	; i
+</span><span>		=&gt; .Lst_for.16
+</span><span>		cmp	imm 10000000 -&gt; stack -8
+</span><span>		mov	imm 0 -&gt; stack -12
+</span><span>		setl	stack -12
+</span><span>		cmp	imm 0 -&gt; stack -12
+</span><span>		jmpe	.Lbr_for.16
+</span><span>		allocate	8	; odd number of arguments
+</span><span>		; register arguments
+</span><span>		mov	imm 1 -&gt; DI	; a
+</span><span>		mov	imm 2 -&gt; SI	; b
+</span><span>		mov	imm 3 -&gt; DX	; c
+</span><span>		mov	imm 4 -&gt; CX	; d
+</span><span>		mov	imm 5 -&gt; R8	; e
+</span><span>		mov	imm 6 -&gt; R9	; f
+</span><span>		; stack arguments
+</span><span>		push	imm 15		; o
+</span><span>		push	imm 14		; n
+</span><span>		push	imm 13		; m
+</span><span>		mov	stack -4 -&gt; AX 	; ret into l
+</span><span>		push	AX		; l
+</span><span>		push	imm 11		; k
+</span><span>		push	imm 10		; j
+</span><span>		push	imm 9		; i
+</span><span>		push	imm 8		; h
+</span><span>		push	imm 7		; g
+</span><span>		call	lots_of_args
+</span><span>		deallocate	80	; why is this 80? 9 pushes + padding
+</span><span>		mov	AX -&gt; stack -16	; l + o here
+</span><span>		mov	stack -16 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -4	; assign to ret
+</span><span>		=&gt; .Lcn_for.16
+</span><span>		mov	stack -8 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -20
+</span><span>		add	imm 1 -&gt; stack -20
+</span><span>		mov	stack -20 -&gt; R10
+</span><span>		mov	R10 -&gt; stack -8
+</span><span>		jmp	.Lst_for.16
+</span><span>		=&gt; .Lbr_for.16
+</span><span>		cmp	imm 150000000 -&gt; stack -4
+</span><span>		mov	imm 0 -&gt; stack -24
+</span><span>		sete	stack -24
+</span><span>		mov	stack -24 -&gt; AX
+</span><span>		ret
+</span><span>		mov	imm 0 -&gt; AX
+</span><span>		ret
+</span></code></pre>
+<p>I am actually at a loss. All this seems to make sense. The generated asembly is more of the same. Let us see another failure:</p>
+<pre data-lang="sh" style="background-color:#ffffff;color:#323232;" class="language-sh "><code class="language-sh" data-lang="sh"><span>AssertionError: Incorrect behavior in chapter_9/valid/arguments_in_registers/fibonacci
+</span><span>* Bad return code: expected 8 and got -11
+</span></code></pre>
+<p>How would you even <em>get</em> -11?</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">fib</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">int </span><span>n) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(n </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">0 </span><span style="font-weight:bold;color:#a71d5d;">||</span><span> n </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">1</span><span>) {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> n;
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return </span><span>fib(n </span><span style="font-weight:bold;color:#a71d5d;">- </span><span style="color:#0086b3;">1</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span>fib(n </span><span style="font-weight:bold;color:#a71d5d;">- </span><span style="color:#0086b3;">2</span><span>);
+</span><span>    }
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> n </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">6</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return </span><span>fib(n);
+</span><span>}
+</span></code></pre>
+<p>This is the assembly this time.</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>	.globl _fib
+</span><span>_fib:
+</span><span>	pushq   %rbp		;; function prologue
+</span><span>	movq    %rsp, %rbp
+</span><span>	subq    $48, %rsp	;; allocate 48
+</span><span>	movl    %edi, -4(%rsp)	;; n
+</span><span>	cmpl    $0, -4(%rsp)	;; does n equal 0?
+</span><span>	movl    $0, -8(%rsp)
+</span><span>	sete      -8(%rsp)
+</span><span>	cmpl    $0, -8(%rsp)	;; is n == 0 true ?
+</span><span>	jne     .Ltrue_or.2
+</span><span>	cmpl    $1, -4(%rsp)	;; does n equal 1?
+</span><span>	movl    $0, -12(%rsp)
+</span><span>	sete      -12(%rsp)
+</span><span>	cmpl    $0, -12(%rsp)	;; is n == 1 true?
+</span><span>	jne     .Ltrue_or.2
+</span><span>	movl    $0, -16(%rsp)
+</span><span>	jmp    .Lend_or.3
+</span><span>.Ltrue_or.2:
+</span><span>	movl    $1, -16(%rsp)
+</span><span>.Lend_or.3:
+</span><span>	cmpl    $0, -16(%rsp)	;; is the previous expresison false?
+</span><span>	je      .Lelse.7
+</span><span>	movl    -4(%rsp), %eax	;; if so just return n
+</span><span>	movq    %rbp, %rsp
+</span><span>	popq    %rbp
+</span><span>	ret
+</span><span>	jmp    .Lend.8
+</span><span>.Lelse.7:
+</span><span>	movl    -4(%rsp), %r10d		;; if not ..
+</span><span>	movl    %r10d, -20(%rsp)	;; move n here
+</span><span>	subl    $1, -20(%rsp)		;; n - 1
+</span><span>	movl    -20(%rsp), %edi		;; move n-1 to edi
+</span><span>	call    _fib			;; call fib
+</span><span>	movl    %eax, -24(%rsp)		;; stash result of fib(n-1)
+</span><span>	movl    -4(%rsp), %r10d
+</span><span>	movl    %r10d, -28(%rsp)	;; move n here
+</span><span>	subl    $2, -28(%rsp)		;; n - 2
+</span><span>	movl    -28(%rsp), %edi		;; move n-1 to edi
+</span><span>	call    _fib			;; call fib
+</span><span>	movl    %eax, -32(%rsp)		;; stash result of fib(n-2)
+</span><span>	movl    -24(%rsp), %r10d	;; stashed result of fib(n-1)
+</span><span>	movl    %r10d, -36(%rsp)
+</span><span>	movl    -32(%rsp), %r10d	;; stashed result of fib(n-2)
+</span><span>	addl    %r10d, -36(%rsp)	;; add two results together
+</span><span>	movl    -36(%rsp), %eax		;; move result to proper place
+</span><span>	movq    %rbp, %rsp
+</span><span>	popq    %rbp
+</span><span>	ret				;; the end
+</span><span>.Lend.8:
+</span><span>	movl    $0, %eax	;; this bit here is the useless return 0
+</span><span>	movq    %rbp, %rsp	;; added at the end of every function
+</span><span>	popq    %rbp
+</span><span>	ret
+</span><span>	.globl _main
+</span><span>_main:
+</span><span>	pushq   %rbp
+</span><span>	movq    %rsp, %rbp
+</span><span>	subq    $16, %rsp
+</span><span>	movl    $6, -4(%rsp)
+</span><span>	movl    -4(%rsp), %edi
+</span><span>	call    _fib
+</span><span>	movl    %eax, -8(%rsp)
+</span><span>	movl    -8(%rsp), %eax
+</span><span>	movq    %rbp, %rsp
+</span><span>	popq    %rbp
+</span><span>	ret
+</span><span>	movl    $0, %eax
+</span><span>	movq    %rbp, %rsp
+</span><span>	popq    %rbp
+</span><span>	ret
+</span></code></pre>
+<p>The logic seems fine. I am not debugging the logic for <code>if</code>s and <code>for</code>s as those test cases pass fine already. This sample here has no stack arguments yet it is still failing. This definitely means there is a memory corruption somewhere, but <em>where</em>? I am sure the smart ones of you spotted it. I am not that smart.<sup class="footnote-reference" id="fr-llm-1"><a href="#fn-llm">5</a></sup></p>
+<p>I figured maybe the mistake is from using the subshell. So I tried doing the test suite the manual way I did it previously. But nope, same result. The good news is that my subshell spell works perfectly.</p>
+<p>On a whim, which is most likely wrong, I thought of changing the sign of the stack offset for function bodies. (So they start from -16 downwards rather than 16 upwards). And that would not affect the failure in the <code>fibonacci</code> example anyway. Surprisingly, that actually affected absolutely nothing: same number of failing cases. I am starting to think this is a <code>parking_lot</code> bug.</p>
+<p>I moved to compare the codegen stage with my previous rust program, and it is <em>identical</em>. I moved on to comparing the assembly generated. Even using <code>diff</code> <em>with colors</em> to compare the two assemblies.</p>
+<p>Then there I saw it. The logic is fine, but there is a typo: something I wrote many chapters ago.</p>
+<p>Behold: stack offsets: <code>-8(%rsp)</code>. It should be from <code>%rbp</code>.</p>
+<p>Now all the tests pass. Wonder how any of them did in the first place.</p>
+<hr />
+<h2 id="lessons-learned">Lessons Learned</h2>
+<ol>
+<li>Spell checking is important.</li>
+<li><code>diff --color</code> is a useful tool.</li>
+<li>Unrelated to <code>paella</code> itself, but I made some improvements to the build script, and learned more abot <code>jj</code> and <code>git</code>. I think I will add <code>git</code> tags to commits that finish each chapter, which would make browsing them easier.</li>
+<li>This week I instealled <a href="https://llm.datasette.io/en/stable/index.html"><code>llm</code></a>, and had it set up to talk to the free version of Github Copilot. Really convenient and useful, and I used to spell check the articles. I will try some local models next but I do not expect they will do much with my Macbook Air M2.</li>
+<li>Can I have typed integer literals or slightly greedier type inference in Zig please? It is absurd that <code>~15</code> <em>just does not work</em>.</li>
+</ol>
+<p>One chapter left for Part 1. Unsure what to do next.</p>
+<hr />
+<footer class="footnotes">
+<ol class="footnotes-list">
+<li id="fn-linker">
+<p>Type errors between different files is very pointedly a not-my-problem. It is a linker error, while this is a compiler. <a href="#fr-linker-1">↩</a></p>
+</li>
+<li id="fn-const">
+<p>When will Rust have enums as proper const generics? Please, Rust. <a href="#fr-const-1">↩</a></p>
+</li>
+<li id="fn-honesty">
+<p>To be honest, and for all chapters, I am skipping most of the reading and jumping through to the tables at the end of the section to implement the functions. I assume that is what the tables are for. <a href="#fr-honesty-1">↩</a></p>
+</li>
+<li id="fn-registers">
+<p>The Book's pseudocode gives different instructions to add if the IR value is converted to an immediate value, register, or a pseudo value. The weird part here is that, well until chapter 15 (where I stopped last time), the IR value is never converted to a register at this stage. This could be something in preparation for the optimizations in Part 3. <a href="#fr-registers-1">↩</a></p>
+</li>
+<li id="fn-llm">
+<p>Gemini LLM told me this is fine. Though to be honest, Github Copilot pointed it out, but I missed it among the five useless things it also mentioned. <a href="#fr-llm-1">↩</a></p>
+</li>
+</ol>
+</footer>
+</main>
+
+			
+			
+				<footer>
+					<small>
+						
+							<a class="mylink" href="mailto:a.sibahi@gmail.com" rel="me">Mail</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;x.com&#x2F;@asibahi" rel="me">Twitter</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;typo.social&#x2F;@asibahi" rel="me">typo.social</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;sr.ht&#x2F;~asibahi&#x2F;" rel="me">SourceHut</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;github.com&#x2F;asibahi" rel="me">GitHub</a>
+						
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;about&#x2F;">Cat</a>
+						
+					</small>
+				</footer>
+			
+		</div>
+	</body>
+</html>

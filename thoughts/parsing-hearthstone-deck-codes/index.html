@@ -1,0 +1,568 @@
+<!doctype html>
+<html  dir="ltr" >
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Musings"
+		/>
+		<title>Abdul Rahman Sibahi | Parsing Hearthstone Deck Codes</title>
+		<link rel="stylesheet" href="https://blog.ar-ms.me/style.css?h=5e9f4e540307a223aec7" />
+	</head>
+
+	<body>
+
+		This website has moved to <a href="http://blog.ar-ms.me/">blog.ar-ms.me</a>. No further content will be published on the  <a href="https://www.un.org/unispal/document/a-hrc-59-23-from-economy-of-occupation-to-economy-of-genocide-report-special-rapporteur-francesca-albanese-palestine-2025/">Github</a> hosted version.
+
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			
+	<header class="space">
+		<a href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;"> ⏏️ </a>
+
+		
+			<h1>Parsing Hearthstone Deck Codes</h1>
+			
+
+			<nav>
+				
+					<p class="secondary">2024-11-14</p>
+				 
+				<details class="secondary">
+					<summary> Contents </summary>
+					<ul>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/parsing-hearthstone-deck-codes/#deck-code-format">Deck Code Format</a>
+							
+							<ul>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/thoughts/parsing-hearthstone-deck-codes/#example">Example</a>
+								</li>
+								
+							</ul>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/parsing-hearthstone-deck-codes/#desired-output-and-shared-elements">Desired Output and Shared Elements</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/parsing-hearthstone-deck-codes/#straightforward-parser">Straightforward Parser</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/parsing-hearthstone-deck-codes/#unsigned-variable-integers">Unsigned Variable Integers</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/parsing-hearthstone-deck-codes/#nom-parser">nom Parser</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/parsing-hearthstone-deck-codes/#final-thoughts">Final Thoughts</a>
+							
+						</li>
+						
+					</ul>
+				</details>
+				
+			</nav>
+		
+	</header>
+
+			
+			
+	<main><p>In the last few days I have been mucking around with <a href="https://blog.ar-ms.me/projects/mimiron-discord-bot/"><code>Mimiron</code></a>, my Hearthstone API library and Discord bot. One of the main functions of the bot, and the one it is used for the most, is parsing Hearhstone deck codes and presenting them in a pretty fashion.</p>
+<p>I had a working parser for a while, but I wanted to experiment with it so I decided to rewrite it in <a href="https://docs.rs/nom/latest/nom/">nom</a>. Here are both parsers.</p>
+<h2 id="deck-code-format">Deck Code Format</h2>
+<p>The deck code fromat is explained <a href="https://hearthsim.info/docs/deckstrings/">by HearthSim</a>, the company behind <a href="https://hsreplay.net">HSReplay</a> As far as I know, there is no official specification of deck codes encoding, so HearthSim's description is what everyone relies on. The page is actually outdated, but their example implementations (in <a href="https://github.com/HearthSim/HearthDb/blob/5258360a9c0411334e4f5a6dcb876b085d89cd3a/HearthDb/Deckstrings/DeckSerializer.cs#L169">C#</a>, <a href="https://github.com/HearthSim/python-hearthstone/blob/82e7c71ebdb6c8521b168d6f0ca418ff56e0fd5d/hearthstone/deckstrings.py#L109">Python</a>, and <a href="https://github.com/HearthSim/hearthstone-deckstrings/blob/6fa4d9cb896841a6246130a59b52a7cf752ca69f/src/index.ts#L123">TypeScript</a>) explain it clearly enough.</p>
+<ul>
+<li>The deck code is essentially a <code>base64</code> encoded series of integers.</li>
+<li>These integers are encoded as unsigned <code>varint</code>s, <a href="https://en.wikipedia.org/wiki/Variable-length_quantity">variable width integers</a><sup class="footnote-reference" id="fr-wikipedia-1"><a href="#fn-wikipedia">1</a></sup>.</li>
+<li>The first two integers are always <code>0</code> and <code>1</code>. They happen to be a byte each, simplifying matters.</li>
+<li>The third integer is the Format. <code>1</code> is Wild, <code>2</code> is Standard, <code>3</code> is Classic, and <code>4</code> is Twist.</li>
+</ul>
+<p>After <code>Format</code>, every block of integers starts with a count, then a listing of items, usually Card IDs (often called DBF IDs). Card IDs are unique numerical IDs that uniquely<sup class="footnote-reference" id="fr-cardid-1"><a href="#fn-cardid">2</a></sup> identify each card in the game. The blocks are as follows:</p>
+<ol>
+<li>Hero. Conveniently, this block only ever has one element.</li>
+<li>Single-copy cards.</li>
+<li>Double-copy cards.</li>
+<li>N-copy cards. Each item in this block is a Card ID followed a by a count. This is only used for weird one-off formats or Arena codes.</li>
+<li>A block of blocks? Unclear.</li>
+</ol>
+<p>The block of blocks is not clearly documented. Sussing it out from existing parsers, it only has one item, which is the Sideboard block. The Sideboard block starts with a count, as usual, but each item is a pair of Card IDs. The first is the card itself, and the second is the Card ID of the Card it is <em>under</em>. There are, as of this time, only two Sideboard cards in the game.</p>
+<p>After that is whatever. It apparently does not matter. It seems to usually be two <code>0</code>s? hitherto undefined blocks? WHo knows.</p>
+<h3 id="example">Example</h3>
+<p>Take this deck code for example:</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>AAECAdrJBgbHpAaopQbUpQaX4Qat4Qaq6gYM5p4GpKcGqKcG66kGw74GzsAG0MAG0dAGmOEGmOIG5OoGjfgGAAED9bMGx6QG97MGx6QG6N4Gx6QGAAA=
+</span></code></pre>
+<p>This is the list of numbers it represents, with comments.</p>
+<pre data-lang="sh" style="background-color:#ffffff;color:#323232;" class="language-sh "><code class="language-sh" data-lang="sh"><span>0
+</span><span>1
+</span><span>2       </span><span style="font-style:italic;color:#969896;"># Format
+</span><span>1
+</span><span>107738  </span><span style="font-style:italic;color:#969896;"># Hero ID
+</span><span>6       </span><span style="font-style:italic;color:#969896;"># Single Copy IDs
+</span><span>102983  </span><span style="font-style:italic;color:#969896;"># &lt;-- Note this ID is the same as the Sidebaord Card later.
+</span><span>103080
+</span><span>103124
+</span><span>110743
+</span><span>110765
+</span><span>111914
+</span><span>12      </span><span style="font-style:italic;color:#969896;"># Double Copy IDs
+</span><span>102246
+</span><span>103332
+</span><span>103336
+</span><span>103659
+</span><span>106307
+</span><span>106574
+</span><span>106576
+</span><span>108625
+</span><span>110744
+</span><span>110872
+</span><span>111972
+</span><span>113677
+</span><span>0       </span><span style="font-style:italic;color:#969896;"># N-Copy IDs. This is only used in weird formats.
+</span><span>1       </span><span style="font-style:italic;color:#969896;"># no idea really
+</span><span>3       </span><span style="font-style:italic;color:#969896;"># Sideboard IDs
+</span><span>104949
+</span><span>102983
+</span><span>104951  </span><span style="font-style:italic;color:#969896;"># first part of pair: Card IN Sideboard
+</span><span>102983  </span><span style="font-style:italic;color:#969896;"># The Sideboard Card
+</span><span>110440
+</span><span>102983
+</span><span>0       </span><span style="font-style:italic;color:#969896;"># who knows? Future proofing maybe?
+</span><span>0
+</span></code></pre>
+<p>It is a very simple format really.</p>
+<h2 id="desired-output-and-shared-elements">Desired Output and Shared Elements</h2>
+<p>This is the Object which I need to fill up.</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">struct </span><span>Data {
+</span><span>    format: Format,
+</span><span>    hero: </span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>,
+</span><span>    cards: </span><span style="color:#0086b3;">Vec</span><span>&lt;</span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>&gt;,
+</span><span>    sideboard_cards: </span><span style="color:#0086b3;">Vec</span><span>&lt;(</span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>, </span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>)&gt;,
+</span><span>}
+</span></code></pre>
+<p>And this is the <code>Format</code> type with its conversion from a <code>usize</code>.</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span>#[derive(Default)]
+</span><span style="font-weight:bold;color:#a71d5d;">enum </span><span>Format {
+</span><span>    Standard,
+</span><span>    #[default]
+</span><span>    Wild,
+</span><span>    Classic,
+</span><span>    Twist,
+</span><span>}
+</span><span style="font-weight:bold;color:#a71d5d;">impl </span><span>TryFrom&lt;</span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>&gt; </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>Format {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">type </span><span>Error </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>(); </span><span style="font-style:italic;color:#969896;">// Petend it is something useful.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">try_from</span><span>(value: </span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>) -&gt; </span><span style="color:#0086b3;">Result</span><span>&lt;</span><span style="font-weight:bold;color:#a71d5d;">Self</span><span>, </span><span style="font-weight:bold;color:#a71d5d;">Self::</span><span>Error&gt; {
+</span><span>        </span><span style="color:#0086b3;">Ok</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">match</span><span> value {
+</span><span>            </span><span style="color:#0086b3;">1 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; Self</span><span>::Wild,
+</span><span>            </span><span style="color:#0086b3;">2 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; Self</span><span>::Standard,
+</span><span>            </span><span style="color:#0086b3;">3 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; Self</span><span>::Classic,
+</span><span>            </span><span style="color:#0086b3;">4 </span><span style="font-weight:bold;color:#a71d5d;">=&gt; Self</span><span>::Twist,
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">_ =&gt; return </span><span style="color:#0086b3;">Err</span><span>(()),
+</span><span>        })
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>To be able to implement and test the different parsers without much of the surrounding code interfering with it, I decided to wrap the whole thing into a tiny executable to be able to pass the codes directly on the command line. I'd also need the <code>base64</code> crate.</p>
+<p>This is the venerable <code>Cargo.toml</code>:</p>
+<pre data-lang="toml" style="background-color:#ffffff;color:#323232;" class="language-toml "><code class="language-toml" data-lang="toml"><span>[package]
+</span><span style="color:#63a35c;">name </span><span>= </span><span style="color:#183691;">&quot;deck_parser&quot;
+</span><span style="color:#63a35c;">version </span><span>= </span><span style="color:#183691;">&quot;0.1.0&quot;
+</span><span style="color:#63a35c;">edition </span><span>= </span><span style="color:#183691;">&quot;2021&quot;
+</span><span>
+</span><span>[dependencies]
+</span><span style="color:#63a35c;">base64 </span><span>= </span><span style="color:#183691;">&quot;0.22.1&quot;
+</span><span style="color:#63a35c;">pico-args </span><span>= </span><span style="color:#183691;">&quot;0.5.0&quot;
+</span><span style="font-style:italic;color:#969896;"># more to xome
+</span></code></pre>
+<p>And this is <code>main.rs</code>, without the types defined above:</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">use </span><span>base64::{prelude::</span><span style="color:#0086b3;">BASE64_STANDARD</span><span>, Engine};
+</span><span style="font-weight:bold;color:#a71d5d;">use </span><span>pico_args::Arguments;
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">main</span><span>() {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let mut</span><span> args </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>Arguments::from_env();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> raw </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> args.</span><span style="color:#62a35c;">contains</span><span>(</span><span style="color:#183691;">&quot;--raw&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let </span><span style="color:#0086b3;">Ok</span><span>(decoded) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> args.</span><span style="color:#62a35c;">free_from_fn</span><span>(|s| </span><span style="color:#0086b3;">BASE64_STANDARD</span><span>.</span><span style="color:#62a35c;">decode</span><span>(s)) </span><span style="font-weight:bold;color:#a71d5d;">else </span><span>{
+</span><span>        eprintln!(</span><span style="color:#183691;">&quot;Not base64 encoded&quot;</span><span>);
+</span><span>        std::process::exit(</span><span style="color:#0086b3;">1</span><span>);
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if</span><span> raw {
+</span><span>        </span><span style="color:#62a35c;">print_nums</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>decoded);
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span style="color:#62a35c;">print_data</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>decoded).</span><span style="color:#62a35c;">is_err</span><span>() {
+</span><span>            eprintln!(</span><span style="color:#183691;">&quot;Invalid Deck Code&quot;</span><span>);
+</span><span>            std::process::exit(</span><span style="color:#0086b3;">1</span><span>);
+</span><span>        }
+</span><span>    }
+</span><span>}
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// Print the List of Numbers
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">print_nums</span><span>(decoded: </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>]) {
+</span><span>    todo!()
+</span><span>}
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// Print the Raw Data obejct.
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">print_data</span><span>(decoded: </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>]) -&gt; </span><span style="color:#0086b3;">Result</span><span>&lt;(), </span><span style="color:#0086b3;">Box</span><span>&lt;dyn Error&gt;&gt; {
+</span><span>    todo!()
+</span><span>}
+</span></code></pre>
+<p>The <code>--raw</code> flag is mostly to test the <code>varint</code> reader, and check it always gets the same output.</p>
+<h2 id="straightforward-parser">Straightforward Parser</h2>
+<p>This is the first parser that I implemented. I used the <a href="https://docs.rs/integer-encoding/latest/integer_encoding/"><code>integer_encoding</code> crate</a> because I dod not want to think about how <code>varint</code> encoding works, and it presents a nice API. It required wrapping the buffer in a <code>std::io::Cursor</code>, but that was it. It reads right from there.</p>
+<p>Consdiering the <code>varint</code> parsing is relegated to a crate, <code>print_nums</code> is fairly straightforward.</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">use </span><span>integer_encoding::VarIntReader; </span><span style="font-style:italic;color:#969896;">// way at the top of the file.
+</span><span style="font-weight:bold;color:#a71d5d;">use </span><span>std::io::Cursor;
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">print_nums</span><span>(decoded: </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>]) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let mut</span><span> buffer </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>Cursor::new(decoded);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while let </span><span style="color:#0086b3;">Ok</span><span>(n) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> buffer.read_varint::&lt;</span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>&gt;() {
+</span><span>        println!(</span><span style="color:#183691;">&quot;</span><span style="color:#0086b3;">{n}</span><span style="color:#183691;">&quot;</span><span>);
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>And one can quickly test that it works with the following command. Should you run it with the deck code earlier, you will find it lists the same numbers.</p>
+<pre data-lang="sh" style="background-color:#ffffff;color:#323232;" class="language-sh "><code class="language-sh" data-lang="sh"><span>cargo run</span><span style="font-weight:bold;color:#a71d5d;"> --</span><span> --raw </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span>insert-deck-code-here</span><span style="font-weight:bold;color:#a71d5d;">&gt;
+</span></code></pre>
+<p>Excellent. This means that <code>integer_encoding</code> does its job splendidly.</p>
+<p>The second one is a bit more involved, but also fairly straightforward. <code>read_varint</code> advances the <code>Cursor</code>, so all that is needed is to assign the values in the correct order. There is a small footgun hiding in the API, however, which is that unsigned <code>varint</code>s have a different encoding for signed <code>varint</code>s. Considering literals are, by default, <code>i32</code>, Rust's type inference works against you here.</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">print_data</span><span>(decoded: </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>]) -&gt; </span><span style="color:#0086b3;">Result</span><span>&lt;(), </span><span style="color:#0086b3;">Box</span><span>&lt;dyn Error&gt;&gt; {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let mut</span><span> buffer </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>Cursor::new(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>decoded);
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// Format is the third number.
+</span><span>    buffer.</span><span style="color:#62a35c;">set_position</span><span>(</span><span style="color:#0086b3;">2</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> format </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> buffer
+</span><span>        .read_varint::&lt;</span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>&gt;()</span><span style="font-weight:bold;color:#a71d5d;">?
+</span><span>        .</span><span style="color:#62a35c;">try_into</span><span>()
+</span><span>        .</span><span style="color:#62a35c;">unwrap_or_default</span><span>();
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// Hero ID is the fifth number.
+</span><span>    buffer.</span><span style="color:#62a35c;">set_position</span><span>(</span><span style="color:#0086b3;">4</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> hero </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> buffer.</span><span style="color:#62a35c;">read_varint</span><span>()</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let mut</span><span> cards </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">Vec</span><span>::new();
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// Single copy cards
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> count </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> buffer.</span><span style="color:#62a35c;">read_varint</span><span>()</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">for _ in </span><span style="color:#0086b3;">0_</span><span style="font-weight:bold;color:#a71d5d;">usize..</span><span>count { </span><span style="font-style:italic;color:#969896;">// &lt;-- Type Inference footgun!!
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> id </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> buffer.</span><span style="color:#62a35c;">read_varint</span><span>()</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>        cards.</span><span style="color:#62a35c;">push</span><span>(id);
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// Double copy cards
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> count </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> buffer.</span><span style="color:#62a35c;">read_varint</span><span>()</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">for _ in </span><span style="color:#0086b3;">0_</span><span style="font-weight:bold;color:#a71d5d;">usize..</span><span>count {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> id </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> buffer.</span><span style="color:#62a35c;">read_varint</span><span>()</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>
+</span><span>        cards.</span><span style="color:#62a35c;">push</span><span>(id);
+</span><span>        cards.</span><span style="color:#62a35c;">push</span><span>(id); </span><span style="font-style:italic;color:#969896;">// twice
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// N-copy cards
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> count </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> buffer.</span><span style="color:#62a35c;">read_varint</span><span>()</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">for _ in </span><span style="color:#0086b3;">0_</span><span style="font-weight:bold;color:#a71d5d;">usize..</span><span>count {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> id </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> buffer.</span><span style="color:#62a35c;">read_varint</span><span>()</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> n </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> buffer.</span><span style="color:#62a35c;">read_varint</span><span>()</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">for _ in </span><span style="color:#0086b3;">0_</span><span style="font-weight:bold;color:#a71d5d;">usize..</span><span>n {
+</span><span>            cards.</span><span style="color:#62a35c;">push</span><span>(id);
+</span><span>        }
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// Sideboard cards. Are they always available?
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let mut</span><span> sideboard_cards </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">Vec</span><span>::new();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if</span><span> buffer.read_varint::&lt;</span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>&gt;().</span><span style="color:#62a35c;">is_ok_and</span><span>(|i| i </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">1</span><span>) {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> count </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> buffer.</span><span style="color:#62a35c;">read_varint</span><span>()</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">for _ in </span><span style="color:#0086b3;">0_</span><span style="font-weight:bold;color:#a71d5d;">usize..</span><span>count {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> id </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> buffer.</span><span style="color:#62a35c;">read_varint</span><span>()</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> sb_id </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> buffer.</span><span style="color:#62a35c;">read_varint</span><span>()</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>
+</span><span>            sideboard_cards.</span><span style="color:#62a35c;">push</span><span>((id, sb_id));
+</span><span>        }
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> result </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> Data {
+</span><span>        format,
+</span><span>        hero,
+</span><span>        cards,
+</span><span>        sideboard_cards,
+</span><span>    };
+</span><span>
+</span><span>    println!(</span><span style="color:#183691;">&quot;</span><span style="color:#0086b3;">{:#?}</span><span style="color:#183691;">&quot;</span><span>, result); </span><span style="font-style:italic;color:#969896;">// Don&#39;t forget to dervie Debug
+</span><span>
+</span><span>    </span><span style="color:#0086b3;">Ok</span><span>(())
+</span><span>}
+</span></code></pre>
+<p>Not a very pretty printing. But it works. Good base implementation.</p>
+<h2 id="unsigned-variable-integers">Unsigned Variable Integers</h2>
+<p>When I started trying to rewrite the parser in <code>nom</code>, I looked for an extension <code>nom</code> crate that can read <code>varint</code>s. I found two! Reading through their source, however, I realized that it is really simple, and decided to bring it in the code base myself.</p>
+<p>Unsigned <code>varint</code>s' encoding is, as it turned out, fairly simple. Honestly it is actually easier to just show the code than explain how the encoding works.</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_varint</span><span>(input: </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>]) -&gt; </span><span style="color:#0086b3;">Option</span><span>&lt;</span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>&gt; {
+</span><span>    </span><span style="font-style:italic;color:#969896;">// a usize can only be as big as 9 bytes in varint encoding
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span style="color:#0086b3;">MAX_BYTES</span><span>: </span><span style="font-weight:bold;color:#a71d5d;">usize = </span><span style="color:#0086b3;">9</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let mut</span><span> num </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(idx, </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>byte) </span><span style="font-weight:bold;color:#a71d5d;">in</span><span> input.</span><span style="color:#62a35c;">iter</span><span>().</span><span style="color:#62a35c;">take</span><span>(</span><span style="color:#0086b3;">MAX_BYTES</span><span>).</span><span style="color:#62a35c;">enumerate</span><span>() {  
+</span><span>        </span><span style="font-style:italic;color:#969896;">// 7 bits from each byte are used
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> byte </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> byte </span><span style="font-weight:bold;color:#a71d5d;">as usize &amp; </span><span style="color:#0086b3;">0x7F</span><span>;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> offset </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> idx </span><span style="font-weight:bold;color:#a71d5d;">* </span><span style="color:#0086b3;">7</span><span>; 
+</span><span>        num </span><span style="font-weight:bold;color:#a71d5d;">|=</span><span> byte </span><span style="font-weight:bold;color:#a71d5d;">&lt;&lt;</span><span> offset;
+</span><span>
+</span><span>        </span><span style="font-style:italic;color:#969896;">// The last byte&#39;s most significant bit is 0.
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if</span><span> byte </span><span style="font-weight:bold;color:#a71d5d;">&amp; </span><span style="color:#0086b3;">0x80 </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">0 </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return </span><span style="color:#0086b3;">Some</span><span>(num);
+</span><span>        }
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="color:#0086b3;">None </span><span style="font-style:italic;color:#969896;">// Insufficient data or overflow
+</span><span>}
+</span></code></pre>
+<p>Signed <code>varint</code>s are a whole other beast, and they do not concern this article outside of the type inference footgun from the previous section.</p>
+<h2 id="nom-parser"><code>nom</code> Parser</h2>
+<p>This is what actually prompted writing this article.<sup class="footnote-reference" id="fr-nom-1"><a href="#fn-nom">3</a></sup> I already used <code>nom</code> elsewhere in <code>Mimiron</code>, and I wanted to exercise more with it.</p>
+<p>The <code>nom</code> way is all about small, composable functions. The clearest small composable function to do is <code>parse_varint</code>. I am not going to use the imperative version shown above, I am writing one using <code>nom</code>'s parser combinators and the standard library's <code>Iterator</code> combinators.</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-style:italic;color:#969896;">// no nom codebase is complete without a giant use statement on top
+</span><span style="font-style:italic;color:#969896;">// this includes combinators for all the functions below
+</span><span style="font-weight:bold;color:#a71d5d;">use </span><span>nom::{
+</span><span>    bytes::complete::{
+</span><span>        take,      </span><span style="font-style:italic;color:#969896;">// takes a number of bytes unconditionally
+</span><span>        take_till, </span><span style="font-style:italic;color:#969896;">// takes until a condition is met and stops before
+</span><span>    },
+</span><span>    combinator::{
+</span><span>        cond,      </span><span style="font-style:italic;color:#969896;">// calls a parser only if a condition is met
+</span><span>        map,       </span><span style="font-style:italic;color:#969896;">// maps the result of a parser
+</span><span>        map_opt,   </span><span style="font-style:italic;color:#969896;">// maps the result of a parser to an Option
+</span><span>        opt,       </span><span style="font-style:italic;color:#969896;">// optional parser, for a value. returns Option
+</span><span>        verify,    </span><span style="font-style:italic;color:#969896;">// verifies the result satisfies a condition
+</span><span>    },
+</span><span>    multi::{
+</span><span>        length_count, </span><span style="font-style:italic;color:#969896;">// gets a number from first parser,
+</span><span>                      </span><span style="font-style:italic;color:#969896;">// then applies second parser that many times
+</span><span>        many0,        </span><span style="font-style:italic;color:#969896;">// repeats a parser until it fails. returns Vec
+</span><span>    },
+</span><span>    sequence::{
+</span><span>        pair,       </span><span style="font-style:italic;color:#969896;">// call first parser, then second parser.
+</span><span>        preceded,   </span><span style="font-style:italic;color:#969896;">// discards result of first parser
+</span><span>        tuple,      </span><span style="font-style:italic;color:#969896;">// same as pair, but up to 21 separate parsers
+</span><span>    },
+</span><span>
+</span><span>    IResult,        </span><span style="font-style:italic;color:#969896;">// nom&#39;s Result type.
+</span><span>                    </span><span style="font-style:italic;color:#969896;">// Returns remaining input and successful results
+</span><span>                    </span><span style="font-style:italic;color:#969896;">// or an error with the input inside the Error.
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_varint</span><span>(input: </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>]) -&gt; IResult&lt;</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>], </span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>&gt; {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let </span><span style="font-weight:bold;color:#795da3;">is_last </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>|b| b </span><span style="font-weight:bold;color:#a71d5d;">&amp; </span><span style="color:#0086b3;">0x80 </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">0</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let </span><span style="font-weight:bold;color:#795da3;">is_in_bounds </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>|p: </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>]| p.</span><span style="color:#62a35c;">len</span><span>() </span><span style="font-weight:bold;color:#a71d5d;">&lt; </span><span style="color:#0086b3;">9</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let </span><span style="font-weight:bold;color:#795da3;">try_varint </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>|(p, lb): (</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>], </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>])| {
+</span><span>        </span><span style="font-style:italic;color:#969896;">// this is the same imperative code up above with some error checking
+</span><span>        p.</span><span style="color:#62a35c;">iter</span><span>()
+</span><span>            .</span><span style="color:#62a35c;">chain</span><span>(lb)
+</span><span>            .</span><span style="color:#62a35c;">enumerate</span><span>()
+</span><span>            .</span><span style="color:#62a35c;">try_fold</span><span>(</span><span style="color:#0086b3;">0</span><span>, |acc, (idx, byte)| {
+</span><span>                ((</span><span style="font-weight:bold;color:#a71d5d;">*</span><span>byte </span><span style="font-weight:bold;color:#a71d5d;">as usize</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">&amp; </span><span style="color:#0086b3;">0x7F</span><span>)
+</span><span>                    .</span><span style="color:#62a35c;">checked_shl</span><span>(idx </span><span style="font-weight:bold;color:#a71d5d;">as u32 * </span><span style="color:#0086b3;">7</span><span>)
+</span><span>                    .</span><span style="color:#62a35c;">map</span><span>(|n| acc </span><span style="font-weight:bold;color:#a71d5d;">|</span><span> n)
+</span><span>            })
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="color:#62a35c;">map_opt</span><span>(
+</span><span>        </span><span style="color:#62a35c;">pair</span><span>(</span><span style="color:#62a35c;">verify</span><span>(</span><span style="color:#62a35c;">take_till</span><span>(is_last), is_in_bounds), </span><span style="color:#62a35c;">take</span><span>(</span><span style="color:#0086b3;">1</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>)),
+</span><span>        try_varint,
+</span><span>    )(input)
+</span><span>}
+</span></code></pre>
+<p>Same, but slightly more unreadable (I am going to have so much fun with this):</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_varint</span><span>(input: </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>]) -&gt; IResult&lt;</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>], </span><span style="font-weight:bold;color:#a71d5d;">usize</span><span>&gt; {
+</span><span>    </span><span style="color:#62a35c;">map_opt</span><span>(
+</span><span>        </span><span style="color:#62a35c;">pair</span><span>(
+</span><span>            </span><span style="color:#62a35c;">verify</span><span>(</span><span style="color:#62a35c;">take_till</span><span>(|b| b </span><span style="font-weight:bold;color:#a71d5d;">&amp; </span><span style="color:#0086b3;">0x80 </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">0</span><span>), |p: </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>]| p.</span><span style="color:#62a35c;">len</span><span>() </span><span style="font-weight:bold;color:#a71d5d;">&lt; </span><span style="color:#0086b3;">9</span><span>),
+</span><span>            </span><span style="color:#62a35c;">take</span><span>(</span><span style="color:#0086b3;">1</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>),
+</span><span>        ),
+</span><span>        |(p, lb): (</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>], </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>])| {
+</span><span>            p.</span><span style="color:#62a35c;">iter</span><span>()
+</span><span>                .</span><span style="color:#62a35c;">chain</span><span>(lb)
+</span><span>                .</span><span style="color:#62a35c;">enumerate</span><span>()
+</span><span>                .</span><span style="color:#62a35c;">try_fold</span><span>(</span><span style="color:#0086b3;">0</span><span>, |acc, (idx, byte)| {
+</span><span>                    ((</span><span style="font-weight:bold;color:#a71d5d;">*</span><span>byte </span><span style="font-weight:bold;color:#a71d5d;">as usize</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">&amp; </span><span style="color:#0086b3;">0x7F</span><span>)
+</span><span>                        .</span><span style="color:#62a35c;">checked_shl</span><span>(idx </span><span style="font-weight:bold;color:#a71d5d;">as u32 * </span><span style="color:#0086b3;">7</span><span>)
+</span><span>                        .</span><span style="color:#62a35c;">map</span><span>(|n| acc </span><span style="font-weight:bold;color:#a71d5d;">|</span><span> n)
+</span><span>                })
+</span><span>        },
+</span><span>    )(input)
+</span><span>}
+</span></code></pre>
+<p>Using this small function to generate the list of numbers, going straight for the unreadable verion:</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">print_nums</span><span>(decoded: </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>]) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">_ = </span><span style="color:#62a35c;">many0</span><span>(</span><span style="color:#62a35c;">map</span><span>(parse_varint, |n| println!(</span><span style="color:#183691;">&quot;</span><span style="color:#0086b3;">{n}</span><span style="color:#183691;">&quot;</span><span>)))(decoded);
+</span><span>}
+</span></code></pre>
+<p>The second function is a bit more involved, but it generally follows the structure of the previous section's solution. I think it is easy enough to follow.</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">print_data</span><span>(decoded: </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>]) -&gt; </span><span style="color:#0086b3;">Result</span><span>&lt;(), </span><span style="color:#0086b3;">Box</span><span>&lt;dyn Error </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> &#39;</span><span style="font-weight:bold;color:#a71d5d;">_</span><span>&gt;&gt; {
+</span><span>    </span><span style="font-style:italic;color:#969896;">// starting from 2 as Format is the third number.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let </span><span>(rem, format) </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">map</span><span>(
+</span><span>        parse_varint,
+</span><span>        |f| f.</span><span style="color:#62a35c;">try_into</span><span>().</span><span style="color:#62a35c;">unwrap_or_default</span><span>()
+</span><span>    )(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>decoded[</span><span style="color:#0086b3;">2</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>])</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// skip 1 byte for Hero ID.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let </span><span>(rem, </span><span style="font-weight:bold;color:#a71d5d;">_</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">parse_varint</span><span>(rem)</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let </span><span>(rem, hero) </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">parse_varint</span><span>(rem)</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let </span><span>(rem, cards) </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">map</span><span>(
+</span><span>        </span><span style="color:#62a35c;">tuple</span><span>((
+</span><span>            </span><span style="font-style:italic;color:#969896;">// single cards
+</span><span>            </span><span style="color:#62a35c;">length_count</span><span>(parse_varint, parse_varint),
+</span><span>
+</span><span>            </span><span style="font-style:italic;color:#969896;">// double cards
+</span><span>            </span><span style="color:#62a35c;">length_count</span><span>(parse_varint, </span><span style="color:#62a35c;">map</span><span>(parse_varint, |id| [id; </span><span style="color:#0086b3;">2</span><span>])),
+</span><span>
+</span><span>            </span><span style="font-style:italic;color:#969896;">// n-count cards
+</span><span>            </span><span style="color:#62a35c;">length_count</span><span>(
+</span><span>                parse_varint,
+</span><span>                </span><span style="color:#62a35c;">map</span><span>(
+</span><span>                    </span><span style="color:#62a35c;">pair</span><span>(parse_varint, parse_varint), 
+</span><span>                    (id, n)</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>[id].</span><span style="color:#62a35c;">repeat</span><span>(n)
+</span><span>                ),
+</span><span>            ),
+</span><span>        )),
+</span><span>        |(v1, v2, vn)| {
+</span><span>            v1.</span><span style="color:#62a35c;">into_iter</span><span>()
+</span><span>                .</span><span style="color:#62a35c;">chain</span><span>(v2.</span><span style="color:#62a35c;">into_iter</span><span>().</span><span style="color:#62a35c;">flatten</span><span>())
+</span><span>                .</span><span style="color:#62a35c;">chain</span><span>(vn.</span><span style="color:#62a35c;">into_iter</span><span>().</span><span style="color:#62a35c;">flatten</span><span>())
+</span><span>                .</span><span style="color:#62a35c;">collect</span><span>()
+</span><span>        },
+</span><span>    )(rem)</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let </span><span>(rem, c) </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">opt</span><span>(parse_varint)(rem)</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let </span><span>(_rem, sideboard_cards) </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">map</span><span>(
+</span><span>        </span><span style="color:#62a35c;">cond</span><span>(
+</span><span>            c.</span><span style="color:#62a35c;">is_some_and</span><span>(|c| c </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">1</span><span>),
+</span><span>            </span><span style="color:#62a35c;">length_count</span><span>(parse_varint, </span><span style="color:#62a35c;">pair</span><span>(parse_varint, parse_varint)),
+</span><span>        ),
+</span><span>        </span><span style="color:#0086b3;">Option</span><span>::unwrap_or_default,
+</span><span>    )(rem)</span><span style="font-weight:bold;color:#a71d5d;">?</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> result </span><span style="font-weight:bold;color:#a71d5d;">= super</span><span>::Data {
+</span><span>        format,
+</span><span>        hero,
+</span><span>        cards,
+</span><span>        sideboard_cards,
+</span><span>    };
+</span><span>
+</span><span>    println!(</span><span style="color:#183691;">&quot;</span><span style="color:#0086b3;">{result:#?}</span><span style="color:#183691;">&quot;</span><span>);
+</span><span>
+</span><span>    </span><span style="color:#0086b3;">Ok</span><span>(())
+</span><span>}
+</span></code></pre>
+<p>But this can be made worse: the whole thing can be collapsed into one function. <code>rustfmt</code> is pulling a lot of weight here, to be honest.<sup class="footnote-reference" id="fr-bug-1"><a href="#fn-bug">4</a></sup></p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">print_data</span><span>(decoded: </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>[</span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>]) -&gt; </span><span style="color:#0086b3;">Result</span><span>&lt;(), </span><span style="color:#0086b3;">Box</span><span>&lt;dyn Error </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> &#39;</span><span style="font-weight:bold;color:#a71d5d;">_</span><span>&gt;&gt; {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> result </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">map</span><span>(
+</span><span>        </span><span style="color:#62a35c;">tuple</span><span>((
+</span><span>            </span><span style="color:#62a35c;">map</span><span>(parse_varint, |f| f.</span><span style="color:#62a35c;">try_into</span><span>().</span><span style="color:#62a35c;">unwrap_or_default</span><span>()),
+</span><span>            </span><span style="color:#62a35c;">preceded</span><span>(parse_varint, parse_varint),
+</span><span>            </span><span style="color:#62a35c;">map</span><span>(
+</span><span>                </span><span style="color:#62a35c;">tuple</span><span>((
+</span><span>                    </span><span style="color:#62a35c;">length_count</span><span>(parse_varint, parse_varint),
+</span><span>                    </span><span style="color:#62a35c;">length_count</span><span>(
+</span><span>                        parse_varint,
+</span><span>                        </span><span style="color:#62a35c;">map</span><span>(parse_varint, |id| [id; </span><span style="color:#0086b3;">2</span><span>])
+</span><span>                    ),
+</span><span>                    </span><span style="color:#62a35c;">length_count</span><span>(
+</span><span>                        parse_varint,
+</span><span>                        </span><span style="color:#62a35c;">map</span><span>(
+</span><span>                            </span><span style="color:#62a35c;">pair</span><span>(parse_varint, parse_varint),
+</span><span>                            |(id, n)| [id].</span><span style="color:#62a35c;">repeat</span><span>(n)
+</span><span>                        ),
+</span><span>                    ),
+</span><span>                )),
+</span><span>                |(v1, v2, vn)| {
+</span><span>                    v1.</span><span style="color:#62a35c;">into_iter</span><span>()
+</span><span>                        .</span><span style="color:#62a35c;">chain</span><span>(v2.</span><span style="color:#62a35c;">into_iter</span><span>().</span><span style="color:#62a35c;">flatten</span><span>())
+</span><span>                        .</span><span style="color:#62a35c;">chain</span><span>(vn.</span><span style="color:#62a35c;">into_iter</span><span>().</span><span style="color:#62a35c;">flatten</span><span>())
+</span><span>                        .</span><span style="color:#62a35c;">collect</span><span>()
+</span><span>                },
+</span><span>            ),
+</span><span>            </span><span style="color:#62a35c;">preceded</span><span>(
+</span><span>                </span><span style="color:#62a35c;">verify</span><span>(parse_varint, |i| </span><span style="font-weight:bold;color:#a71d5d;">*</span><span>i </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">1</span><span>),
+</span><span>                </span><span style="color:#62a35c;">length_count</span><span>(parse_varint, </span><span style="color:#62a35c;">pair</span><span>(parse_varint, parse_varint)),
+</span><span>            ),
+</span><span>        )),
+</span><span>        |(format, hero, cards, sideboard_cards)| Data {
+</span><span>            format,
+</span><span>            hero,
+</span><span>            cards,
+</span><span>            sideboard_cards,
+</span><span>        },
+</span><span>    )(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>decoded[</span><span style="color:#0086b3;">2</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>])</span><span style="font-weight:bold;color:#a71d5d;">?
+</span><span>    .</span><span style="color:#0086b3;">1</span><span>;
+</span><span>
+</span><span>    println!(</span><span style="color:#183691;">&quot;</span><span style="color:#0086b3;">{:#?}</span><span style="color:#183691;">&quot;</span><span>, result);
+</span><span>
+</span><span>    </span><span style="color:#0086b3;">Ok</span><span>(())
+</span><span>}
+</span></code></pre>
+<p>One tiny thing before the end. Note the <code>+'_</code> bound on the return type. Since <code>nom</code>'s errors contain the input, which is a reference, converting the errors can sometimes cause Rust's type inference to declare that your functions expect a <code>'static</code> lifetime. For example, here, when the <code>+'_</code> bound is removed, or <a href="https://www.reddit.com/r/rust/comments/1goc61r/nom_implemented_parser_is_demanding_i_use_a/">when converting <code>nom</code>'s errors to <code>anyhow</code>'s errors using the <code>?</code> operator.</a>. It is not a footgun, per se, as the compiler yells at you. But the error is frankly inscrutable unless you know what you are looking for.</p>
+<h2 id="final-thoughts">Final Thoughts</h2>
+<p>Rewriting in nom was a bit easier than I thought it would be. And even the compact "one-liner" is more readable than I thought. The hardest part is probably how to translate the problem into <code>nom</code>'s API. (Which I struggled with when I considered using <code>nom</code> for <a href="https://adventofcode.com">Advent of Code</a>). Who knows? Maybe this year.</p>
+<p>If you would like to do this with another Rust parser library (<code>chumsky</code> or <code>winnow</code> or <code>combine</code> or <code>pest</code>), please do share, and I will happily link it here.</p>
+<footer class="footnotes">
+<ol class="footnotes-list">
+<li id="fn-wikipedia">
+<p>This Wikipedia page gives a terrible and obtuse explanation. The implementation turned out to very simple. <a href="#fr-wikipedia-1">↩</a></p>
+</li>
+<li id="fn-cardid">
+<p>IDs can be deleted from the game, leading to outdated deck codes out there, but that's out of scope of this article. In <code>Mimiron</code>, I work around that by looking them up in the third party database everyone else uses: <a href="https://hearthstonejson.com">HearthSim's</a>, and "canonilizing" the IDs. My bot is somewhat unique for relying first on <a href="https://develop.battle.net/documentation">Blizzard's official API</a>. <a href="#fr-cardid-1">↩</a></p>
+</li>
+<li id="fn-nom">
+<p>If you are somehow this far into this post and do not know what <code>nom</code> is, it is a Rust parser combinator library, probably the first and most famous. <em>Combinators</em> are small higher order functions (read: functions that can take and/or output other functions: function functions, if you will), that can be composed together. Parser Combinator Libraries are, in a way, their own Domain Specific Language. <a href="https://docs.rs/nom/latest/nom/#parser-combinators"><code>nom</code>'s documentation has a nice intro</a>. <a href="#fr-nom-1">↩</a></p>
+</li>
+<li id="fn-bug">
+<p>2024-11-26 update: I found out that this code has a bug: it rejects valid decks without a sideboard. How would one fix that? <a href="#fr-bug-1">↩</a></p>
+</li>
+</ol>
+</footer>
+</main>
+
+			
+			
+				<footer>
+					<small>
+						
+							<a class="mylink" href="mailto:a.sibahi@gmail.com" rel="me">Mail</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;x.com&#x2F;@asibahi" rel="me">Twitter</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;typo.social&#x2F;@asibahi" rel="me">typo.social</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;sr.ht&#x2F;~asibahi&#x2F;" rel="me">SourceHut</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;github.com&#x2F;asibahi" rel="me">GitHub</a>
+						
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;about&#x2F;">Cat</a>
+						
+					</small>
+				</footer>
+			
+		</div>
+	</body>
+</html>

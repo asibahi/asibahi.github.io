@@ -1,0 +1,77 @@
+<!doctype html>
+<html  dir="ltr" >
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="CLI tool and Discord Bot for Hearthstone"
+		/>
+		<title>Abdul Rahman Sibahi | Mimiron</title>
+		<link rel="stylesheet" href="https://blog.ar-ms.me/style.css?h=5e9f4e540307a223aec7" />
+	</head>
+
+	<body>
+
+		This website has moved to <a href="http://blog.ar-ms.me/">blog.ar-ms.me</a>. No further content will be published on the  <a href="https://www.un.org/unispal/document/a-hrc-59-23-from-economy-of-occupation-to-economy-of-genocide-report-special-rapporteur-francesca-albanese-palestine-2025/">Github</a> hosted version.
+
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			
+	<header class="space">
+		<a href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;"> ⏏️ </a>
+
+		
+			<h1>Mimiron</h1>
+			
+				<p class="secondary">CLI tool and Discord Bot for Hearthstone</p>
+			
+
+			<nav>
+				 
+			</nav>
+		
+	</header>
+
+			
+			
+	<main><p>Here is the <a href="https://github.com/asibahi/mimiron">main workspace repo</a>, and the CLI.</p>
+<p>Here is the <a href="https://github.com/asibahi/mimiron/tree/master/mimiron_bot">Discord Bot repo</a>, where info about using the bot can be found.</p>
+<p><img src="../deckimagewide.png" alt="Example Deck Image" /></p>
+<p>I have been playing <a href="https://hearthstone.blizzard.com/en-us">Hearthstone</a> almost every day for the better part of a decade, since the release of Journey of Un'Goro in 2017, and I have been participating in various communities for the game on Discord and Reddit. Almost all the tools in these communities that help players look up the cards are based on an unofficial third party API, even though Blizzard does have their own. So I always imagined that there should be one based on Blizzard's API.</p>
+<p>So, looking for a project to learn Rust with, I decided to try and build the Hearthstone Bot I always wanted, that looks up the data directly from Blizzard. I mostly succeeded, and I only fall on third party API for some odd omissions in Blizzard's own (like some card thumbnails) and meta game data (which is not provided by Blizzard at all.)</p>
+<p>During the development of this project, I learned a lot about Rust and its surrounding ecosystem: <code>clap</code>, <code>serde</code>, <code>serenity</code>, <code>image</code>, <code>nom</code>. I learned about HTTP and <code>GET</code> and <code>POST</code>. I learned about hosting my bot on shuttle.rs. I implemented font fallback to localize the app and deck images (not that anybody actually uses the localization, but it is there.) For a brief while I had a straight-up type setter to set card text into images, though I eventually dropped that because the fonts took too much server space.</p>
+<p>My favorite thing about the project, personally, is the deck images. I had so much fun with them. They look very nice in all cases with no human intervention whatsoever. The CLI app has tool to patch produce the images for some content creator's Twitter or something.</p>
+<p>The Discord bot is, at the time of this writing, installed on 33 Discord servers. Chief among them is the <a href="https://www.reddit.com/r/CompetitiveHS/">Competitive Hearthstone Discord Server</a>, where I hang out and gather ideas on how to improve the bot;</p>
+</main>
+
+			
+			
+				<footer>
+					<small>
+						
+							<a class="mylink" href="mailto:a.sibahi@gmail.com" rel="me">Mail</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;x.com&#x2F;@asibahi" rel="me">Twitter</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;typo.social&#x2F;@asibahi" rel="me">typo.social</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;sr.ht&#x2F;~asibahi&#x2F;" rel="me">SourceHut</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;github.com&#x2F;asibahi" rel="me">GitHub</a>
+						
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;about&#x2F;">Cat</a>
+						
+					</small>
+				</footer>
+			
+		</div>
+	</body>
+</html>

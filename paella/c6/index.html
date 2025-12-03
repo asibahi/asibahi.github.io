@@ -1,0 +1,513 @@
+<!doctype html>
+<html  dir="ltr" >
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Musings"
+		/>
+		<title>Abdul Rahman Sibahi | Writing a C Compiler, Chapter 6, in Zig</title>
+		<link rel="stylesheet" href="https://blog.ar-ms.me/style.css?h=5e9f4e540307a223aec7" />
+	</head>
+
+	<body>
+
+		This website has moved to <a href="http://blog.ar-ms.me/">blog.ar-ms.me</a>. No further content will be published on the  <a href="https://www.un.org/unispal/document/a-hrc-59-23-from-economy-of-occupation-to-economy-of-genocide-report-special-rapporteur-francesca-albanese-palestine-2025/">Github</a> hosted version.
+
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			
+	<header class="space">
+		<a href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;"> ⏏️ </a>
+
+		
+			<h1>Writing a C Compiler, Chapter 6, in Zig</h1>
+			
+
+			<nav>
+				
+					<p class="secondary">2025-05-24</p>
+				 
+				<details class="secondary">
+					<summary> Contents </summary>
+					<ul>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c6/#lexer">Lexer</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c6/#ast">AST</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c6/#parser">Parser</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c6/#the-eye-test">The Eye Test</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c6/#automatic-formatting">Automatic Formatting</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c6/#internal-representation">Internal Representation</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c6/#lessons-learned">Lessons Learned</a>
+							
+						</li>
+						
+					</ul>
+				</details>
+				
+			</nav>
+		
+	</header>
+
+			
+			
+	<main><p>This is chapter 6 of implementing <a href="https://norasandler.com/2022/03/29/Write-a-C-Compiler-the-Book.html">Writing a C Compiler</a> in Zig. So, without further ado, time to get on with <code>if</code> statements and conditional expressions.</p>
+<hr />
+<h2 id="lexer">Lexer</h2>
+<p>New keywords! <code>if</code> and <code>else</code>, and two new tokens <code>?</code> and <code>:</code>. Apparently the word <code>query</code> is an acceptable single word name for a question mark so I am going with that in the lexer.</p>
+<p>The new keywords are simple, enough, but it requires updating the keyword map.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const</span><span> keywords </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.StaticStringMap(Tag).initComptime(.{
+</span><span>    .{ </span><span style="color:#183691;">&quot;int&quot;</span><span>,</span><span style="color:#0086b3;"> .type_int </span><span>},
+</span><span>    .{ </span><span style="color:#183691;">&quot;return&quot;</span><span>,</span><span style="color:#0086b3;"> .keyword_return </span><span>},
+</span><span>    .{ </span><span style="color:#183691;">&quot;void&quot;</span><span>,</span><span style="color:#0086b3;"> .keyword_void </span><span>},
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// new lines :
+</span><span>    .{ </span><span style="color:#183691;">&quot;if&quot;</span><span>,</span><span style="color:#0086b3;"> .keyword_if </span><span>},
+</span><span>    .{ </span><span style="color:#183691;">&quot;else&quot;</span><span>,</span><span style="color:#0086b3;"> .keyword_else </span><span>},
+</span><span>});
+</span></code></pre>
+<p>The two new tokens are trivial to add and require no new states in the lexer's state machine. So onto AST and parsing.</p>
+<h2 id="ast">AST</h2>
+<p>One new statement and one new expression today. Compound statements survive another day without being implemented.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Stmt </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    </span><span style="font-style:italic;color:#969896;">// snip --
+</span><span>    @&quot;if&quot;: struct { cond: *Expr, then: *Stmt, @&quot;else&quot;: </span><span style="font-weight:bold;color:#a71d5d;">?*</span><span>Stmt },
+</span><span>};
+</span></code></pre>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Expr </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    </span><span style="font-style:italic;color:#969896;">// snip --
+</span><span>    ternary: </span><span style="font-weight:bold;color:#a71d5d;">struct </span><span>{ </span><span style="font-weight:bold;color:#a71d5d;">*</span><span>Expr, </span><span style="font-weight:bold;color:#a71d5d;">*</span><span>Expr, </span><span style="font-weight:bold;color:#a71d5d;">*</span><span>Expr },
+</span><span>};
+</span></code></pre>
+<p>And that is pretty much it for the AST. No revision of previous major design decisions.</p>
+<h2 id="parser">Parser</h2>
+<p>So how do you parse an expression like <code>c ? a : b</code>?. The rule for it is that it is right associative (not unlike the assignment operator <code>=</code>), <em>but</em> the expression in the middle is treated as it is part of the expression itself or between two parenthesis. In other words, think of <code>? a :</code> as an binary operator between <code>c</code> and <code>b</code> all by itself, only for parsing purposes. So first update the <code>binop_precedence</code> function</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">binop_precedence</span><span>(self: </span><span style="color:#62a35c;">@This</span><span>()) </span><span style="font-weight:bold;color:#a71d5d;">?struct </span><span>{ u8, u8 } {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return switch </span><span>(self) {
+</span><span style="color:#0086b3;">        .query </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ </span><span style="color:#0086b3;">3</span><span>, </span><span style="color:#0086b3;">0 </span><span>},
+</span><span>        </span><span style="font-style:italic;color:#969896;">// the rest
+</span><span>    };
+</span><span>}
+</span></code></pre>
+<p>Then update <code>parse_expr</code> to deal with it. This is slightly trickier than usual. The middle expression should be parsed before the right hand side is. Therefore this silly dance, before parsing <code>rhs</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const </span><span>then_ptr: </span><span style="font-weight:bold;color:#a71d5d;">?*ast.Expr = if </span><span>(current.tag </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .query</span><span>) t: {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> then </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.colon, tokens);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">break</span><span> :t </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> utils.create(ast.Expr, arena, then);
+</span><span>} </span><span style="font-weight:bold;color:#a71d5d;">else </span><span style="color:#0086b3;">null</span><span>;
+</span></code></pre>
+<p>Then, in the big switch board, this tiny line is added.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.greater_equals </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_ge </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span style="color:#0086b3;">.query </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .ternary </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ lhs_ptr, then_ptr</span><span style="font-weight:bold;color:#a71d5d;">.?</span><span>, rhs_ptr } }, </span><span style="font-style:italic;color:#969896;">// &lt;-
+</span></code></pre>
+<p>And voila. Ternary expressions are parsed now. This creates a very tiny bit of waste creating the boiler-plate reducing <code>bin_op</code> (which is shared between all the other expressions). But all is fair in the name of easier to write code.</p>
+<p>For parsing the <code>if</code> statement, I hit upon a previous design decision. In adding declarations last chapter, I decided to forgo a separate <code>parse_stmt</code> in exchange for a simpler, at the time, single <code>parse_block_item</code>, and discriminating then between declarations and statements. Now, since the <code>then</code> argument of the <code>if</code> statement can only be a statement and not a declaration, this requires a divorce, and a separate <code>parse_stmt</code>. Declarations are not ready to leave the house yet and therefore will remain in <code>parse_block_item</code>. This is the trimmed <code>parse_block_item</code>, followed by <code>parse_stmt</code> building its own house.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_block_item</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ast.BlockItem </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> current </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.NotEnoughJunk;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(current.tag) {
+</span><span style="color:#0086b3;">        .type_int </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expect(.identifier, tokens);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> new_token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.NotEnoughJunk;
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>init: </span><span style="font-weight:bold;color:#a71d5d;">?*ast.Expr = switch </span><span>(new_token.tag) {
+</span><span style="color:#0086b3;">                .equals </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>ret: {
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> expr </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> expr_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, expr);
+</span><span>
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.semicolon, tokens);
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">break</span><span> :ret expr_ptr;
+</span><span>                },
+</span><span style="color:#0086b3;">                .semicolon </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span style="color:#0086b3;">null</span><span>,
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; return error</span><span>.SyntaxError,
+</span><span>            };
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .decl(.{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> name, .init </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> init });
+</span><span>        },
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; </span><span>{
+</span><span>            tokens.put_back(current);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> stmt </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_stmt(arena, tokens);
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .stmt(stmt);
+</span><span>        },
+</span><span>    }
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_stmt</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ast.Stmt </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> current </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.NotEnoughJunk;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(current.tag) {
+</span><span style="color:#0086b3;">        .semicolon </span><span style="font-weight:bold;color:#a71d5d;">=&gt; return</span><span style="color:#0086b3;"> .null</span><span>,
+</span><span style="color:#0086b3;">        .keyword_return </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> expr </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> expr_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, expr);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.semicolon, tokens);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .@</span><span style="color:#183691;">&quot;return&quot; </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> expr_ptr };
+</span><span>        },
+</span><span>        </span><span style="font-style:italic;color:#969896;">// if statement goes here
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; </span><span>{
+</span><span>            tokens.put_back(current);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> expr </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> expr_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, expr);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.semicolon, tokens);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .expr </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> expr_ptr };
+</span><span>        },
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>The <code>if</code> statement parsing is slightly more involved than usual. The condition is always an expression that is parenthesized, and the <code>then</code> statement always exists. The <code>else</code> statement's existence depends on the existence of the keyword <code>else</code>, so I have to <em>peek</em>. But because of the way I implemented peeking, by "putting back" the consumed token, it makes for some weird looking code, making more than usual use of block expressions.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.keyword_if </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.l_paren, tokens);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> cond </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> cond_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, cond);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.r_paren, tokens);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> then </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_stmt(arena, tokens);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> then_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Stmt, arena, then);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> peek </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.NotEnoughJunk;
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// weird looking code starts here.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>else_ptr: </span><span style="font-weight:bold;color:#a71d5d;">?*ast.Stmt = if </span><span>(peek.tag </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .keyword_else</span><span>) s: {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> e </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_stmt(arena, tokens);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">break</span><span> :s </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> utils.create(ast.Stmt, arena, e);
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else </span><span>n: {
+</span><span>        tokens.put_back(peek);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">break</span><span> :n </span><span style="color:#0086b3;">null</span><span>;
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .@</span><span style="color:#183691;">&quot;if&quot; </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{
+</span><span>        .cond </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> cond_ptr,
+</span><span>        .then </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> then_ptr,
+</span><span>        .@</span><span style="color:#183691;">&quot;else&quot; </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> else_ptr,
+</span><span>    } };
+</span><span>},
+</span></code></pre>
+<p>Now, before eating the pudding, the semantic analysis phase requires some tiny updates. There are no changes other than handling the new statements and expressions, and adding thoise is 11 lines total.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-style:italic;color:#969896;">// resolve_stmt
+</span><span style="color:#0086b3;">.@&quot;if&quot; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>i</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_expr(bp, i.cond);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_stmt(bp, i.then);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(i.@</span><span style="color:#183691;">&quot;else&quot;</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>e</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_stmt(bp, e);
+</span><span>},
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// resolve_expr
+</span><span style="color:#0086b3;">.ternary </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>t</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_expr(bp, t.@</span><span style="color:#183691;">&quot;0&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_expr(bp, t.@</span><span style="color:#183691;">&quot;1&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_expr(bp, t.@</span><span style="color:#183691;">&quot;2&quot;</span><span>);
+</span><span>},
+</span></code></pre>
+<p>And that is it, really. Back to proving the pudding. Testing it on this lovely and non-confusing C file:</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> a </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(</span><span style="font-weight:bold;color:#a71d5d;">!</span><span>a)
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(</span><span style="color:#0086b3;">3 </span><span style="font-weight:bold;color:#a71d5d;">/ </span><span style="color:#0086b3;">4</span><span>)
+</span><span>            a </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">3</span><span>;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>            a </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">8 </span><span style="font-weight:bold;color:#a71d5d;">/ </span><span style="color:#0086b3;">2</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> a;
+</span><span>}
+</span></code></pre>
+<p>Gives me this result, which judging by the formatting is probably parsed correctly.</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>PROGRAM
+</span><span>	FUNCTION main
+</span><span>		int a &lt;- 0;
+</span><span>		IF (! a)
+</span><span>			IF (/ 3 4)
+</span><span>				a &lt;- 3;
+</span><span>			ELSE
+</span><span>				a &lt;- (/ 8 2);
+</span><span>		RETURN a
+</span></code></pre>
+<p>All parsing and semantic analysis are succeeding and failing where they should. That's good news.</p>
+<hr />
+<h2 id="the-eye-test">The Eye Test</h2>
+<p>Since I implemented all this nice pretty parsing, I would like to inspect on all the valid test files of the chapter. At least, visually confirm that there is nothing out of the ordinary. Same as I have been doing for C files in each chapter, but instead of copying a couple of interesting ones and running my app on them, I can do a batch comparison between each C file and the visual result of parsing it or validation or whatever.</p>
+<p>The first thought was to do it with a shell script. But shell is voodoo to me.<sup class="footnote-reference" id="fr-ai-1"><a href="#fn-ai">1</a></sup> <code>build.zig</code> is right there, so maybe I can use it to that effect.</p>
+<p>The new command would need two arguments: the stage, which is then passed directly to the executable, and the target folder. I cannot just pass the target chapter because not all chapters have the same structure.</p>
+<p>What followed was one of the most aggravating and annoying parts of this series.</p>
+<p>The first hurdle was navigating Zig's standard library's file system API. The docs are not very clear and the different APIs are organized in weird places, and how does any of that tie back in the build system?</p>
+<p>There is a <code>walk</code> function.<sup class="footnote-reference" id="fr-recursive-1"><a href="#fn-recursive">2</a></sup> Excellent, but it needs a <code>std.fs.Dir</code> object. All I have is a <code>std.Build.LazyPath</code>. How do I make one into the other?</p>
+<p>Turns out <code>LazyPath</code> has a <code>getPath3</code> method (<code>getPath</code> and <code>getPath2</code> are deprecated) that gives you a <code>std.Build.Cache.Path</code> object. And <em>that</em> in its turn has an <code>openDir</code> method that gives you a <code>std.fs.Dir</code> that then you can <code>walk</code>. Try figuring that out only from the docs.</p>
+<p>The document traversal afterwards was simple enough. Basic Zig code.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">while </span><span>(</span><span style="font-weight:bold;color:#a71d5d;">try</span><span> walker.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>entry</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(entry.kind </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .file </span><span style="font-weight:bold;color:#a71d5d;">and
+</span><span>    std.mem.endsWith(u8, entry.basename, </span><span style="color:#183691;">&quot;.c&quot;</span><span>)) </span><span style="font-style:italic;color:#969896;">// not to do .s files
+</span><span>{
+</span><span>    </span><span style="font-style:italic;color:#969896;">// insert entry handling here
+</span><span>};
+</span></code></pre>
+<p>The second hurdle, and if you actually know what I know now this will all seem very stupid, is a bit more involved. At first I passed the arguments as I did for the other previous commands. So like this</p>
+<pre data-lang="sh" style="background-color:#ffffff;color:#323232;" class="language-sh "><code class="language-sh" data-lang="sh"><span>zig build eye</span><span style="font-weight:bold;color:#a71d5d;"> --</span><span> path/to/test/folder --parse
+</span></code></pre>
+<p>And I desugared the arguments accordingly.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const </span><span>args: []</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> []</span><span style="font-weight:bold;color:#a71d5d;">const u8 =</span><span> b.args </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>    &amp;.{ </span><span style="color:#183691;">&quot;./c_files/&quot;</span><span>, </span><span style="color:#183691;">&quot;--lex&quot; </span><span>}; </span><span style="font-style:italic;color:#969896;">// least harmful default;
+</span></code></pre>
+<p>So this way, if I don't pass anything, these would pass and the tree would be walked properly. Now <code>zig build eye</code> worked fine.</p>
+<p>The problem is, if I run <em>another</em> command than <code>eye</code>, (say .. <code>run</code>), the directory walk would run anyway and then the build script would fail because the first argument is not a valid directory or whatever.</p>
+<p>I did know that, btw.</p>
+<p>Looking for help again someone suggested that the solution is to create a custom step, and even provided helpful code to do so. <a href="https://gist.github.com/layneson/e0ed54f9e14da878dd0ba102da41e2c3">Here was a nice Gist I found on Google</a>. This seems perfect. So I do this:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> std </span><span style="font-weight:bold;color:#a71d5d;">= @import</span><span>(</span><span style="color:#183691;">&quot;std&quot;</span><span>);
+</span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">build</span><span>(b: </span><span style="font-weight:bold;color:#a71d5d;">*std.Build</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!void </span><span>{
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// stuff unchanged
+</span><span>
+</span><span>    { </span><span style="font-style:italic;color:#969896;">// `zig build eye` command
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> eye_step </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.step(</span><span style="color:#183691;">&quot;eye&quot;</span><span>, </span><span style="color:#183691;">&quot;eye test all the files in a given directory&quot;</span><span>);
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> closure </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.allocator.create(Closure) </span><span style="font-weight:bold;color:#a71d5d;">catch unreachable</span><span>;
+</span><span>        closure</span><span style="font-weight:bold;color:#a71d5d;">.* =</span><span> .{ .exe </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> exe, .step </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.Build.Step.init(.{
+</span><span>            .id </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .custom</span><span>,
+</span><span>            .name </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#183691;">&quot;inner_eye&quot;</span><span>,
+</span><span>            .makeFn </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> make_eye_step,
+</span><span>            .owner </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b,
+</span><span>        }) };
+</span><span>
+</span><span>        eye_step.dependOn(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>closure.step);
+</span><span>    }
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">const </span><span>Closure </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    exe: </span><span style="font-weight:bold;color:#a71d5d;">*std.Build.Step.Compile</span><span>,
+</span><span>    step: </span><span style="font-weight:bold;color:#a71d5d;">std.Build.Step</span><span>,
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">make_eye_step</span><span>(step: </span><span style="font-weight:bold;color:#a71d5d;">*std.Build.Step</span><span>, _: </span><span style="font-weight:bold;color:#a71d5d;">std.Build.Step.MakeOptions</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> b </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> step.owner;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>closure: </span><span style="font-weight:bold;color:#a71d5d;">*const Closure = </span><span style="color:#62a35c;">@fieldParentPtr</span><span>(</span><span style="color:#183691;">&quot;step&quot;</span><span>, step);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> exe </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> closure.exe;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>args: []</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> []</span><span style="font-weight:bold;color:#a71d5d;">const u8 =</span><span> b.args </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>        &amp;.{ </span><span style="color:#183691;">&quot;./c_files/&quot;</span><span>, </span><span style="color:#183691;">&quot;--lex&quot; </span><span>}; </span><span style="font-style:italic;color:#969896;">// least harmful default;
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// directory api boilerplate
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> lazy </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.path(args[</span><span style="color:#0086b3;">0</span><span>]);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> path </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> lazy.getPath3(b, </span><span style="color:#0086b3;">null</span><span>);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dir </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> path.openDir(</span><span style="color:#183691;">&quot;&quot;</span><span>, .{ .access_sub_paths </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">false </span><span>});
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> walker </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> dir.walk(b.allocator);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer</span><span> walker.deinit();
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>prev_run_cmd: </span><span style="font-weight:bold;color:#a71d5d;">?*std.Build.Step.Run = </span><span style="color:#0086b3;">null</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(</span><span style="font-weight:bold;color:#a71d5d;">try</span><span> walker.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>entry</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(entry.kind </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .file </span><span style="font-weight:bold;color:#a71d5d;">and</span><span> std.mem.endsWith(u8, entry.basename, </span><span style="color:#183691;">&quot;.c&quot;</span><span>)) {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> file </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> entry.path;
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> bat </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.addSystemCommand(&amp;.{ </span><span style="color:#183691;">&quot;bat&quot;</span><span>, file });
+</span><span>            bat.setCwd(lazy); </span><span style="font-style:italic;color:#969896;">// I am proud of myself for finding this
+</span><span>            bat.stdio </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .inherit</span><span>;
+</span><span>
+</span><span>            </span><span style="font-style:italic;color:#969896;">// each invokation of `bat` depends on the previous run step so they&#39;re sequential
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(prev_run_cmd) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>c</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>                bat.step.dependOn(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>c.step);
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> run_cmd </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.addRunArtifact(exe);
+</span><span>            run_cmd.setCwd(lazy);
+</span><span>            run_cmd.addArg(file);
+</span><span>            run_cmd.addArgs(args[1</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>]);
+</span><span>            run_cmd.stdio </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .inherit</span><span>;
+</span><span>
+</span><span>            </span><span style="font-style:italic;color:#969896;">// exactly what the default for `zig build run` does.
+</span><span>            run_cmd.step.dependOn(b.getInstallStep());
+</span><span>
+</span><span>            </span><span style="font-style:italic;color:#969896;">// keeping the squence
+</span><span>            run_cmd.step.dependOn(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>bat.step);
+</span><span>            prev_run_cmd </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> run_cmd;
+</span><span>        }
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// making sure the OG step depends on the tail of the chain.
+</span><span>    step.dependOn(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>prev_run_cmd</span><span style="font-weight:bold;color:#a71d5d;">.?</span><span>.step);
+</span><span>}
+</span></code></pre>
+<p>The way I see it, I am doing all the right things. All the steps depend on the proper steps, and best of all, the other <code>zig build</code> commands like <code>run</code> and <code>test</code> and what have you, all work fine.</p>
+<p>Except this does not work. And I could not figure out.</p>
+<p>Running this would dutifully go through the loop properly, as I was able to verify by inserting a few <code>prints</code>, but the commands do not run. And asking for help on the Discord only led me into StackOverflow-esque answers that I am not interested in repeating.</p>
+<p>Asking for help on <a href="https://ziggit.dev">Ziggit</a> actually gave me enough info to understand the real problem. <a href="https://ziggit.dev/t/a-custom-build-zig-command-to-run-system-commands-and-see-their-output/10212/4?u=asibahi">This reply in particular</a> answered the dilemma for me.</p>
+<p>Do you know where the two phases of the build system are mentioned in the <a href="https://ziglang.org/learn/build-system/">Official Build System Documentation and Intro</a>? Because I cannot find it. It is mentioned in passing in the documentation of some methods like <code>getPath3</code> and <code>run</code>, but with no proper explanation.</p>
+<p>Anyway, it clicked, and I was able to use the user provided options to insert the needed details.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>{ </span><span style="font-style:italic;color:#969896;">// `zig build eye` command
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> eye_step </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.step(</span><span style="color:#183691;">&quot;eye&quot;</span><span>, </span><span style="color:#183691;">&quot;Eye test all the files in a given directory&quot;</span><span>);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(b.option(std.Build.LazyPath, </span><span style="color:#183691;">&quot;folder&quot;</span><span>, </span><span style="color:#183691;">&quot;Path to eye&quot;</span><span>)) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>lazy</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-style:italic;color:#969896;">// same logic as before, more or less
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>walk_tree(b, exe, eye_step, lazy);
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else </span><span>{
+</span><span>        </span><span style="font-style:italic;color:#969896;">// *this* step, and only this one would fail
+</span><span>        </span><span style="font-style:italic;color:#969896;">// if the `folder` option is not set, because it
+</span><span>        </span><span style="font-style:italic;color:#969896;">// depends on `fail` only if the path does not exist
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> fail </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.addFail(</span><span style="color:#183691;">&quot;folder needed for eye&quot;</span><span>);
+</span><span>        eye_step.dependOn(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>fail.step);
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p><code>b.option</code> creates a new argument for the user of the build system. This way, if the argument is present, the directory tree is walked and the proper dependencies are added to the <code>eye</code> command. If it is not, then the <code>eye</code> command will fail.</p>
+<p>Other commands are unchanged and unaffected. The only difference from my first envisioning it is the way it is called, which I am not happy with, but eh. Pick your battles.</p>
+<pre data-lang="sh" style="background-color:#ffffff;color:#323232;" class="language-sh "><code class="language-sh" data-lang="sh"><span>zig build eye -Dfolder</span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#183691;">&quot;./c_files/&quot;</span><span style="font-weight:bold;color:#a71d5d;"> --</span><span> --parse
+</span></code></pre>
+<p>And it works exactly like I wanted. It calls <code>bat</code> on every file in a given directory followed by <code>paella</code> at the given stage, allowing for a quick eye test between the two. I'd paste the whole output here but I will settle for one file.</p>
+<pre data-lang="sh" style="background-color:#ffffff;color:#323232;" class="language-sh "><code class="language-sh" data-lang="sh"><span>File: multiple_if.c
+</span><span>1 int main(void) {
+</span><span>2     int a = 0</span><span style="font-weight:bold;color:#a71d5d;">;
+</span><span>3     int b = 0</span><span style="font-weight:bold;color:#a71d5d;">;
+</span><span>4
+</span><span>5     if (a)
+</span><span>6         a = 2</span><span style="font-weight:bold;color:#a71d5d;">;
+</span><span>7     else
+</span><span>8         a = 3</span><span style="font-weight:bold;color:#a71d5d;">;
+</span><span>9
+</span><span>10     if (b)
+</span><span>11         b = 4</span><span style="font-weight:bold;color:#a71d5d;">;
+</span><span>12     else
+</span><span>13         b = 5</span><span style="font-weight:bold;color:#a71d5d;">;
+</span><span>14
+</span><span>15     return a + b</span><span style="font-weight:bold;color:#a71d5d;">;
+</span><span>16 }
+</span><span>PROGRAM
+</span><span>	FUNCTION main
+</span><span>		int a </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span>- 0</span><span style="font-weight:bold;color:#a71d5d;">;
+</span><span>		int b </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span>- 0</span><span style="font-weight:bold;color:#a71d5d;">;
+</span><span>		IF a
+</span><span>			a </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span>- 2</span><span style="font-weight:bold;color:#a71d5d;">;
+</span><span>		ELSE
+</span><span>			a </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span>- 3</span><span style="font-weight:bold;color:#a71d5d;">;
+</span><span>		IF b
+</span><span>			b </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span>- 4</span><span style="font-weight:bold;color:#a71d5d;">;
+</span><span>		ELSE
+</span><span>			b </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span>- 5</span><span style="font-weight:bold;color:#a71d5d;">;
+</span><span>		RETURN (+ a b)
+</span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#183691;">===============================
+</span></code></pre>
+<h2 id="automatic-formatting">Automatic Formatting</h2>
+<p>While mucking around in the documentation I discovered a nice <code>addFmt</code> method that is there to check for proper formatting in CI, but can just format the code for you. Adding these two lines pretty much anywhere in the file formatted everything every time I <code>zig build</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> fmt_step </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.addFmt(.{ .paths </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> &amp;.{</span><span style="color:#183691;">&quot;./&quot;</span><span>} });
+</span><span>exe.step.dependOn(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>fmt_step.step);
+</span></code></pre>
+<hr />
+<h2 id="internal-representation">Internal Representation</h2>
+<p>Now is the time to get on with new IR generation. Similarly to lat chapter, no new instructions need be appended. So after the IR generation stage, it is done. Short chapter all around.</p>
+<p>Generating the IR for <code>if</code> statements is straightforward, with a slight complication around the optional <code>else</code> statement.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.@&quot;if&quot; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>c</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> cond </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, c.cond);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> else_label </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(</span><span style="color:#183691;">&quot;else&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .jump_z </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .cond </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> cond, .target </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> else_label } });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>stmt_emit_ir(bp, c.then);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(c.@</span><span style="color:#183691;">&quot;else&quot;</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>@</span><span style="color:#183691;">&quot;else&quot;</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> end_label </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(</span><span style="color:#183691;">&quot;end&quot;</span><span>);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .jump </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> end_label });
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .label </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> else_label });
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>stmt_emit_ir(bp, @</span><span style="color:#183691;">&quot;else&quot;</span><span>);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .label </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> end_label });
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else try</span><span> bp.append(.{ .label </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> else_label });
+</span><span>},
+</span></code></pre>
+<p>For conditional expressions, it is much of the same, except <code>expr_emit_ir</code> is called instead and its value is returned, and there is no optional <code>else</code> clause.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.ternary </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>t</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> else_label </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(</span><span style="color:#183691;">&quot;else&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> end_label </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(</span><span style="color:#183691;">&quot;end&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dst_name </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(</span><span style="color:#183691;">&quot;ter&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>dst: </span><span style="font-weight:bold;color:#a71d5d;">ir.Value =</span><span> .{ .variable </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> dst_name };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> cond </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, t.@</span><span style="color:#183691;">&quot;0&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .jump_z </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .cond </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> cond, .target </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> else_label } });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> then </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, t.@</span><span style="color:#183691;">&quot;1&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .copy </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(then, dst) });
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .jump </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> end_label });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .label </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> else_label });
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> else_ </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, t.@</span><span style="color:#183691;">&quot;2&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .copy </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(else_, dst) });
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .label </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> end_label });
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> dst;
+</span><span>},
+</span></code></pre>
+<p>And that's it. I do not even have to run the intermediate codepaths as no changes to instructions or assembly generation this chapter. There is a small extra credit of implementing <code>goto</code>, but I am skipping extra credit this time.</p>
+<hr />
+<h2 id="lessons-learned">Lessons Learned</h2>
+<p>Not to repeat ranting at Zig's documentation, but I definitely now understand Zig's build system at a deeper level than before.</p>
+<hr />
+<footer class="footnotes">
+<ol class="footnotes-list">
+<li id="fn-ai">
+<p>If all else fails I can get some LLM to generate it for me. It would work fine. <a href="#fr-ai-1">↩</a></p>
+</li>
+<li id="fn-recursive">
+<p>Turns out it is recursive and I actually wanted <code>iterate()</code>. But that is on me, it is clearly written. <a href="#fr-recursive-1">↩</a></p>
+</li>
+</ol>
+</footer>
+</main>
+
+			
+			
+				<footer>
+					<small>
+						
+							<a class="mylink" href="mailto:a.sibahi@gmail.com" rel="me">Mail</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;x.com&#x2F;@asibahi" rel="me">Twitter</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;typo.social&#x2F;@asibahi" rel="me">typo.social</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;sr.ht&#x2F;~asibahi&#x2F;" rel="me">SourceHut</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;github.com&#x2F;asibahi" rel="me">GitHub</a>
+						
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;about&#x2F;">Cat</a>
+						
+					</small>
+				</footer>
+			
+		</div>
+	</body>
+</html>

@@ -1,0 +1,358 @@
+<!doctype html>
+<html  dir="ltr" >
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Musings"
+		/>
+		<title>Abdul Rahman Sibahi | Writing a C Compiler, Chapter 7, in Zig</title>
+		<link rel="stylesheet" href="https://blog.ar-ms.me/style.css?h=5e9f4e540307a223aec7" />
+	</head>
+
+	<body>
+
+		This website has moved to <a href="http://blog.ar-ms.me/">blog.ar-ms.me</a>. No further content will be published on the  <a href="https://www.un.org/unispal/document/a-hrc-59-23-from-economy-of-occupation-to-economy-of-genocide-report-special-rapporteur-francesca-albanese-palestine-2025/">Github</a> hosted version.
+
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			
+	<header class="space">
+		<a href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;"> ⏏️ </a>
+
+		
+			<h1>Writing a C Compiler, Chapter 7, in Zig</h1>
+			
+
+			<nav>
+				
+					<p class="secondary">2025-05-25</p>
+				 
+				<details class="secondary">
+					<summary> Contents </summary>
+					<ul>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c7/#syntax-tree-and-parsing">Syntax Tree and Parsing</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c7/#pretty-printing-tricks">Pretty Printing Tricks</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c7/#semantic-analysis">Semantic Analysis</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c7/#lessons-learned">Lessons Learned</a>
+							
+						</li>
+						
+					</ul>
+				</details>
+				
+			</nav>
+		
+	</header>
+
+			
+			
+	<main><p>Chapter 6 of <a href="https://norasandler.com/2022/03/29/Write-a-C-Compiler-the-Book.html">Writing a C Compiler</a> was a short one. So will Chapter 7. Do not even bother to buckle up.</p>
+<hr />
+<h2 id="syntax-tree-and-parsing">Syntax Tree and Parsing</h2>
+<p>See? Not even new tokens for lexer.</p>
+<p>This chapter is all about implementing compound statements. To abstract the similarities between a function body and compound statements, a new <code>Block</code> AST node shall be created. Along with a tiny change in <code>FuncDef</code>, you get this beauty.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>FuncDef </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    name: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>    body: </span><span style="font-weight:bold;color:#a71d5d;">Block</span><span>,
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Block </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    body: std.SegmentedList(</span><span style="font-weight:bold;color:#a71d5d;">BlockItem</span><span>, </span><span style="color:#0086b3;">0</span><span>),
+</span><span>};
+</span></code></pre>
+<p>And adding a new statement type in <code>Stmt</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Stmt </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    @&quot;return&quot;: </span><span style="font-weight:bold;color:#a71d5d;">*Expr</span><span>,
+</span><span>    expr: </span><span style="font-weight:bold;color:#a71d5d;">*Expr</span><span>,
+</span><span>    @&quot;if&quot;: struct { cond: *Expr, then: *Stmt, @&quot;else&quot;: </span><span style="font-weight:bold;color:#a71d5d;">?*</span><span>Stmt },
+</span><span>    compound: </span><span style="font-weight:bold;color:#a71d5d;">Block</span><span>, </span><span style="font-style:italic;color:#969896;">// &lt;-- this one
+</span><span>    </span><span style="color:#0086b3;">null</span><span>: void,
+</span><span>};
+</span></code></pre>
+<p>I <em>think</em> it does not need a pointer. I will wait to see if the Zig compiler yells at me.</p>
+<p>Updating the parser requires a new function: <code>parse_block</code>. It is simple enough and the implementation is copied over from <code>parse_func_def</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_block</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ast.Block </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.l_brace, tokens);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>body: std.SegmentedList(</span><span style="font-weight:bold;color:#a71d5d;">ast.BlockItem</span><span>, </span><span style="color:#0086b3;">0</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{};
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(tokens.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>next_token</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(next_token.tag </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .r_brace</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">break</span><span>;
+</span><span>        tokens.put_back(next_token);
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> item </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_block_item(arena, tokens);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> body.append(arena, item);
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else return error</span><span>.NotEnoughJunk;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .body </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> body };
+</span><span>}
+</span></code></pre>
+<p>And <code>parse_func_def</code> is adjusted accordingly:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_func_def</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ast.FuncDef </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.type_int, tokens);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expect(.identifier, tokens);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.l_paren, tokens);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.keyword_void, tokens);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.r_paren, tokens);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> block </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_block(arena, tokens);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> name, .block </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> block };
+</span><span>}
+</span></code></pre>
+<p>And that is it.</p>
+<h2 id="pretty-printing-tricks">Pretty Printing Tricks</h2>
+<p>I encountered an interesting problem in the AST pretty printer. Because I am using an indentation based scheme, rather than braces, it makes it slightly difficult to know where blocks begin and end if I just, increase the indentation. So, for a regular block, I add the keyword <code>DO</code>.</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> a </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">2</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> b;
+</span><span>    {
+</span><span>        a </span><span style="font-weight:bold;color:#a71d5d;">= -</span><span style="color:#0086b3;">4</span><span>;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> a </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">7</span><span>;
+</span><span>        b </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> a </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">1</span><span>;
+</span><span>    }
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> b </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">8 </span><span style="font-weight:bold;color:#a71d5d;">&amp;&amp;</span><span> a </span><span style="font-weight:bold;color:#a71d5d;">== -</span><span style="color:#0086b3;">4</span><span>;
+</span><span>}
+</span></code></pre>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>PROGRAM
+</span><span>	FUNCTION main
+</span><span>		int a &lt;- 2;
+</span><span>		int b;
+</span><span>		DO
+</span><span>			a &lt;- (- 4);
+</span><span>			int a &lt;- 7;
+</span><span>			b &lt;- (+ a 1);
+</span><span>		RETURN (&amp;&amp; (== b 8) (== a (- 4)))
+</span></code></pre>
+<p>But when the block is in the <code>if</code> statement, this would look something like this, which is .. eh, unseemly.</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>IF a
+</span><span>	DO
+</span><span>		int b &lt;- 2;
+</span><span>		RETURN b
+</span></code></pre>
+<p>So instead I get rid of <code>DO</code> and just have indent immediately after <code>IF</code>. The thing is, the logic for compound statement printing does not know, normally, whether it is preceded by <code>IF</code> (and later <code>FOR</code> and <code>WHILE</code>), or if it is standing by its own. Doing the custom formatting when printing <code>IF</code> would lead to a lot of duplicated code for every new control flow statement. So time to abuse another feature of the formatter!</p>
+<p>One of the options in <code>srd.fmt.FormatOptions</code> is <code>alignment</code>, which is normally used to align the printed items right, left, or center, within given padding. In the <code>fmt</code> string, <code>&lt;</code> indicates left, <code>^</code> indicates center, and <code>&gt;</code> indicates right, which is the default value.</p>
+<p>In other words, when printing the statement following <code>IF</code>, all I need to do there is this, which sets the <code>alignment</code> option in the called function to <code>.center</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">try</span><span> writer.print(</span><span style="color:#183691;">&quot;{:^[1]}&quot;</span><span>, .{ cs.then, w </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">1 </span><span>});
+</span><span style="font-style:italic;color:#969896;">//                  ^ right here
+</span></code></pre>
+<p>And now I can do the check right within <code>.compound</code>:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.compound </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>b</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.body.constIterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>cw: </span><span style="font-weight:bold;color:#a71d5d;">usize = </span><span style="color:#0086b3;">undefined</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(options.alignment </span><span style="font-weight:bold;color:#a71d5d;">!=</span><span style="color:#0086b3;"> .center</span><span>) { </span><span style="font-style:italic;color:#969896;">// &lt;-- here
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> writer.writeAll(</span><span style="color:#183691;">&quot;DO&quot;</span><span>);
+</span><span>        cw </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> w </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">1</span><span>;
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>item</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> writer.print(</span><span style="color:#183691;">&quot;{}&quot;</span><span>, .{item});
+</span><span>        cw </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> w;
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>item</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> writer.print(</span><span style="color:#183691;">&quot;</span><span style="color:#0086b3;">\n</span><span style="color:#183691;">{:[1]}&quot;</span><span>, .{
+</span><span>            item,
+</span><span>            cw,
+</span><span>        });
+</span><span>    }
+</span><span>},
+</span></code></pre>
+<p>The other issue, which you might have noticed, is that the new line characters which separate the internal block items are printed before each statement. The reason for that is for the block not to end in a newline character, as the new line is usually taken care of by the <em>parent</em> block. This simply avoids an additional blank line after every block.</p>
+<p>This prints the AST nicely, even for ridiculous C code.</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> ten </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">10</span><span>;
+</span><span>    {}
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> twenty </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">10 </span><span style="font-weight:bold;color:#a71d5d;">* </span><span style="color:#0086b3;">2</span><span>;
+</span><span>    {{}}
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> ten </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> twenty;
+</span><span>}
+</span></code></pre>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>PROGRAM
+</span><span>	FUNCTION main
+</span><span>		int ten &lt;- 10;
+</span><span>		DO
+</span><span>		int twenty &lt;- (* 10 2);
+</span><span>		DO
+</span><span>			DO
+</span><span>		RETURN (+ ten twenty)
+</span></code></pre>
+<p>I could just as well omit the empty blocks right here and then.<sup class="footnote-reference" id="fr-python-1"><a href="#fn-python">1</a></sup> Maybe I will do that if I ever write a real compiler.</p>
+<hr />
+<h2 id="semantic-analysis">Semantic Analysis</h2>
+<p>I wish this were as easy as filling up the blanks, but that is actually where the meat of this chapter is. Because C allows shadowing in inner scopes. The following is perfectly valid C code.</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> x </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">1</span><span>;         </span><span style="font-style:italic;color:#969896;">// &lt;-- x0
+</span><span>    {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> x </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">2</span><span>;     </span><span style="font-style:italic;color:#969896;">// &lt;-- x1
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(x </span><span style="font-weight:bold;color:#a71d5d;">&gt; </span><span style="color:#0086b3;">5</span><span>) {   </span><span style="font-style:italic;color:#969896;">// &lt;-- x1
+</span><span>            x </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">3</span><span>;     </span><span style="font-style:italic;color:#969896;">// &lt;-- x1
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> x </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">4</span><span>; </span><span style="font-style:italic;color:#969896;">// &lt;-- x2
+</span><span>        }
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> x  ;    </span><span style="font-style:italic;color:#969896;">// &lt;-- x1
+</span><span>    }
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> x;          </span><span style="font-style:italic;color:#969896;">// &lt;-- x0
+</span><span>}
+</span></code></pre>
+<p>What this means in practice is that each new scope (read: new block), requires its own <code>variable_map</code>. Previously, the <code>variable_map</code> was defined at program scope in <code>resolve_prgm</code>:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">resolve_prgm</span><span>(
+</span><span>    gpa: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    strings: </span><span style="font-weight:bold;color:#a71d5d;">*utils.StringInterner</span><span>,
+</span><span>    prgm: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Prgm</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>variable_map: std.StringHashMapUnmanaged([:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> u8) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .empty</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer</span><span> variable_map.deinit(gpa);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate =</span><span> .{
+</span><span>        .gpa </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> gpa,
+</span><span>        .strings </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> strings,
+</span><span>        .variable_map </span><span style="font-weight:bold;color:#a71d5d;">= &amp;</span><span>variable_map,
+</span><span>    };
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_func_def(bp, prgm.func_def);
+</span><span>}
+</span></code></pre>
+<p>The <code>variable_map</code> is discarded by the end of this function because, by the time the function is done, all the user-supplied variable names have been given unique names. The scopes are identified and done at this point.</p>
+<p>It does not serve to create a new <em>empty</em> <code>variable_map</code> for each new block, because blocks can use variables from parent blocks.[^global] So for every new block, or compound statement, a copy of the variable map is passed instead of the original, and existing keys are replaced by the bindings in the inner scope. However, to avoid double declarations, a marker is needed to note whether this variable belongs to the current scope (so it cannot be declared again), or a parent one, (so it can).</p>
+<p>This is the part where double declarations are checked:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">resolve_decl</span><span>(
+</span><span>    bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate</span><span>,
+</span><span>    decl: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Decl</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(bp.variable_map.contains(decl.name))
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.DuplicateVariableDecl;
+</span><span>    </span><span style="font-style:italic;color:#969896;">// snip --
+</span></code></pre>
+<p>The data for whether this is shadowing a parent variable (legal) or repeating a local declaration (illegal) is not tracked yet. The simplest way to use a <code>Entry</code> type that has both the new name, and a little boolean toggle whether it is local. The data oriented way is perhaps to create a new map for each new scope, but this seems complicated when the scopes get too deep and you need to keep a stack of maps, etc. I will stick with a boolean, or at least an enum.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const </span><span>Entry </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    new_name: [:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>    scope: </span><span style="font-weight:bold;color:#a71d5d;">enum </span><span>{ local, parent } </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .local</span><span>,
+</span><span>};
+</span></code></pre>
+<p>I really love anonymous types. Then change the variable map to a <code>std.StringHashMapUnmanaged(Entry)</code>. This currently needs a couple of call sites to update, but all very straightforward. The default value of <code>.local</code> makes initialization simpler, just a <code>.{ .name = unique_name }</code> when inserting into the map.</p>
+<p>Now a small change to the duplicate declaration checking can be done. I need to check if it exists <em>and</em> if it is a <code>.local</code> scope. A cute zig syntactic trick makes this nicely terse. Who needs <code>if let</code> chains.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">if </span><span>(bp.variable_map.get(decl.name)) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>entry</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(entry.scope </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .local</span><span>)
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.DuplicateVariableDecl;
+</span></code></pre>
+<p>All that is left is creating a new, duplicate, <code>variable_map</code> when resolving a compound statement. Before I do that, I will do some refactorings moving the old <code>variable_map</code> into <code>FuncDef</code> scope instead, and moving the old <code>resolve_func_def</code> logic into a new <code>resolve_block</code> that can be reused. This also simplifies later chapters when each function has its own scope as well.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">resolve_prgm</span><span>(
+</span><span>    gpa: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    strings: </span><span style="font-weight:bold;color:#a71d5d;">*utils.StringInterner</span><span>,
+</span><span>    prgm: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Prgm</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_func_def(gpa, strings, prgm.func_def);
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">resolve_func_def</span><span>(
+</span><span>    gpa: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    strings: </span><span style="font-weight:bold;color:#a71d5d;">*utils.StringInterner</span><span>,
+</span><span>    func_def: </span><span style="font-weight:bold;color:#a71d5d;">*ast.FuncDef</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>variable_map: std.StringHashMapUnmanaged(Entry) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .empty</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer</span><span> variable_map.deinit(gpa);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate =</span><span> .{
+</span><span>        .gpa </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> gpa,
+</span><span>        .strings </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> strings,
+</span><span>        .variable_map </span><span style="font-weight:bold;color:#a71d5d;">= &amp;</span><span>variable_map,
+</span><span>    };
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_block(bp, </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>func_def.block);
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">resolve_block</span><span>(
+</span><span>    bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate</span><span>,
+</span><span>    block: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Block</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> block.body.iterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>item</span><span style="font-weight:bold;color:#a71d5d;">| switch </span><span>(item</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>) {
+</span><span style="color:#0086b3;">        .S </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>s</span><span style="font-weight:bold;color:#a71d5d;">| try </span><span>resolve_stmt(bp, s),
+</span><span style="color:#0086b3;">        .D </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>d</span><span style="font-weight:bold;color:#a71d5d;">| try </span><span>resolve_decl(bp, d),
+</span><span>    };
+</span><span>}
+</span></code></pre>
+<p>Now back to compound statements. First the <code>variable_map</code> is copied into a new one, with all the <code>.local</code>s changes into <code>.parent</code>s. Zig helpfully has a <code>clone</code> method. then iterate over all the values and update the <code>scope</code> field.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-style:italic;color:#969896;">// inside resolve_stmt
+</span><span style="color:#0086b3;">.compound </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>b</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> variable_map </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.variable_map.clone(bp.gpa);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer</span><span> variable_map.deinit(bp.gpa);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> variable_map.valueIterator();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>value</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>        value</span><span style="font-weight:bold;color:#a71d5d;">.* =</span><span> .{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> value.name, .scope </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .parent </span><span>};
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>inner_bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate =</span><span> .{
+</span><span>        .gpa </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bp.gpa,
+</span><span>        .strings </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bp.strings,
+</span><span>        .variable_map </span><span style="font-weight:bold;color:#a71d5d;">= &amp;</span><span>variable_map,
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_block(inner_bp, b);
+</span><span>},
+</span></code></pre>
+<p>This compiles fine. The eye test passes on all C files in chapter 7's tests in the test suite. Time to actually run the test suite, and thankfully all tests pass.</p>
+<p>Now what? Almost nothing. No changes to IR (except handling the new statement) or any following stage necessary. Running the full tests, up to compilation, works fine. Time to move on to chapter 8.</p>
+<hr />
+<h2 id="lessons-learned">Lessons Learned</h2>
+<p>The most fun I had here was experimenting with the AST pretty printer. Cracking the nut of the duplicate new line problem.</p>
+<footer class="footnotes">
+<ol class="footnotes-list">
+<li id="fn-python">
+<p>Or pull a Python and output <code>...</code> or <code>pass</code>. <a href="#fr-python-1">↩</a></p>
+</li>
+</ol>
+</footer>
+</main>
+
+			
+			
+				<footer>
+					<small>
+						
+							<a class="mylink" href="mailto:a.sibahi@gmail.com" rel="me">Mail</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;x.com&#x2F;@asibahi" rel="me">Twitter</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;typo.social&#x2F;@asibahi" rel="me">typo.social</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;sr.ht&#x2F;~asibahi&#x2F;" rel="me">SourceHut</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;github.com&#x2F;asibahi" rel="me">GitHub</a>
+						
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;about&#x2F;">Cat</a>
+						
+					</small>
+				</footer>
+			
+		</div>
+	</body>
+</html>

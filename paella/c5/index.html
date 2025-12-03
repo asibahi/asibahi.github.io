@@ -1,0 +1,876 @@
+<!doctype html>
+<html  dir="ltr" >
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Musings"
+		/>
+		<title>Abdul Rahman Sibahi | Writing a C Compiler, Chapter 5, in Zig</title>
+		<link rel="stylesheet" href="https://blog.ar-ms.me/style.css?h=5e9f4e540307a223aec7" />
+	</head>
+
+	<body>
+
+		This website has moved to <a href="http://blog.ar-ms.me/">blog.ar-ms.me</a>. No further content will be published on the  <a href="https://www.un.org/unispal/document/a-hrc-59-23-from-economy-of-occupation-to-economy-of-genocide-report-special-rapporteur-francesca-albanese-palestine-2025/">Github</a> hosted version.
+
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			
+	<header class="space">
+		<a href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;"> ⏏️ </a>
+
+		
+			<h1>Writing a C Compiler, Chapter 5, in Zig</h1>
+			
+
+			<nav>
+				
+					<p class="secondary">2025-05-21</p>
+				 
+				<details class="secondary">
+					<summary> Contents </summary>
+					<ul>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c5/#lexer-and-parser">Lexer and Parser</a>
+							
+							<ul>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/paella/c5/#operator-associativity">Operator Associativity</a>
+								</li>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/paella/c5/#new-statements-and-expressions">New Statements and Expressions!</a>
+								</li>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/paella/c5/#unit-testing-considered-useful">Unit Testing Considered Useful</a>
+								</li>
+								
+							</ul>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c5/#semantic-analysis">Semantic Analysis</a>
+							
+							<ul>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/paella/c5/#new-names-for-old-variables">New Names for Old Variables</a>
+								</li>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/paella/c5/#resolutions">Resolutions</a>
+								</li>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/paella/c5/#nospaceleft">NoSpaceLeft</a>
+								</li>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/paella/c5/#leak">Leak</a>
+								</li>
+								
+							</ul>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c5/#ir-generation">IR Generation</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c5/#lessons-learned-rant-about-zig">Lessons Learned Rant About Zig</a>
+							
+						</li>
+						
+					</ul>
+				</details>
+				
+			</nav>
+		
+	</header>
+
+			
+			
+	<main><p>Reflecting on the <a href="https://blog.ar-ms.me/paella/c4/">past chapters so far</a>, I am starting to think that this project is perhaps the perfect vehicle to explore new languages. Right off the bat, one deals with file systems, cross compiling, data structures, memory management, pretty formatting, and what have you.</p>
+<p>But as the project goes on, especially if you are familiar with the problem (read: have done it before in a previous language), most of the tasks become purely mechanical. Refactoring, updating requirements, satisfying compiler errors. It shows you how the language handles churn, and whether it is pleasant or not. It also shows how helpful the community around the language when you inevitably have to debug your language knowledge and hit weird snags.</p>
+<p>So, yeah. If you want to learn a new programming language, get yourself <a href="https://norasandler.com/2022/03/29/Write-a-C-Compiler-the-Book.html">Writing a C Compiler</a>, do it once (at least halfway) with your favorite language. Then you can do it with any language as a test run. Way less math than a ray tracer.</p>
+<p>Anyway, now is Chapter 5. Chapter 5 is about, let me look, local variables. Oh <em>finally</em> some new statements.</p>
+<hr />
+<h2 id="lexer-and-parser">Lexer and Parser</h2>
+<p>One new token, <code>=</code>. Adding this is trivial so I am sparing you the details. There is one thing to update that, while belongs to the parser, is placed in <code>lexer.zig</code>. The precedence chart.</p>
+<h3 id="operator-associativity">Operator Associativity</h3>
+<p>Previously, all operators were left associative. This one, however, is <em>right</em> associative. One could make a special case for it, but another upcoming operators<sup class="footnote-reference" id="fr-ternary-1"><a href="#fn-ternary">1</a></sup> are right associative as well. So care must be taken.</p>
+<p>The <code>binop_precedence</code> function is implemented as a method in <code>Token.Tag</code>, and this is how it looks after adding <code>=</code>. It returns a tuple now instead of just a <code>u8</code>. The reason <code>left</code> is a <code>u8</code> as well is because the two numbers are added later and changing from <code>bool</code> to <code>u8</code> in Zig is a torture. Even <code>if (left) 1 else 0</code> does not work as it actually returns a <code>comptime int</code> ....</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">binop_precedence</span><span>(self: </span><span style="color:#62a35c;">@This</span><span>()) </span><span style="font-weight:bold;color:#a71d5d;">?struct </span><span>{ u8, u8 } {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return switch </span><span>(self) {
+</span><span style="color:#0086b3;">        .asterisk</span><span>, </span><span style="font-style:italic;color:#969896;">// *
+</span><span style="color:#0086b3;">        .f_slash</span><span>, </span><span style="font-style:italic;color:#969896;">// /
+</span><span style="color:#0086b3;">        .percent</span><span>, </span><span style="font-style:italic;color:#969896;">// %
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ </span><span style="color:#0086b3;">50</span><span>, </span><span style="color:#0086b3;">1 </span><span>},
+</span><span style="color:#0086b3;">        .hyphen</span><span>, </span><span style="font-style:italic;color:#969896;">// -
+</span><span style="color:#0086b3;">        .plus</span><span>, </span><span style="font-style:italic;color:#969896;">// +
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ </span><span style="color:#0086b3;">45</span><span>, </span><span style="color:#0086b3;">1 </span><span>},
+</span><span style="color:#0086b3;">        .lesser_than</span><span>,
+</span><span style="color:#0086b3;">        .lesser_equals</span><span>,
+</span><span style="color:#0086b3;">        .greater_than</span><span>,
+</span><span style="color:#0086b3;">        .greater_equals</span><span>,
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ </span><span style="color:#0086b3;">35</span><span>, </span><span style="color:#0086b3;">1 </span><span>},
+</span><span style="color:#0086b3;">        .double_equals</span><span>,
+</span><span style="color:#0086b3;">        .bang_equals</span><span>,
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ </span><span style="color:#0086b3;">30</span><span>, </span><span style="color:#0086b3;">1 </span><span>},
+</span><span style="color:#0086b3;">        .double_ambersand </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ </span><span style="color:#0086b3;">10</span><span>, </span><span style="color:#0086b3;">1 </span><span>},
+</span><span style="color:#0086b3;">        .double_pipe </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ </span><span style="color:#0086b3;">5</span><span>, </span><span style="color:#0086b3;">1 </span><span>},
+</span><span style="color:#0086b3;">        .equals </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ </span><span style="color:#0086b3;">1</span><span>, </span><span style="color:#0086b3;">0 </span><span>},
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; </span><span style="color:#0086b3;">null</span><span>,
+</span><span>    };
+</span><span>}
+</span></code></pre>
+<p>It would be perhaps more idiomatic to a create a proper struct and give the fields proper name and have a proper enum for left vs right associativity but, eh. Too much boilerplate for a one use function.</p>
+<p>In <code>parse_expr</code>, the rules are slightly amended. Instead of this <code>while</code> loop:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">while </span><span>(next_token.tag.binop_precedence()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>prec</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(prec </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span> min_prec) </span><span style="font-weight:bold;color:#a71d5d;">break</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> rhs </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(alloc, tokens, prec </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">1</span><span>);
+</span><span>    </span><span style="font-style:italic;color:#969896;">// etc
+</span></code></pre>
+<p>It now becomes this:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">while </span><span>(next_token.tag.binop_precedence()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>r</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> prec, </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> left </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> r; </span><span style="font-style:italic;color:#969896;">// destructuring yay
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(prec </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span> min_prec) </span><span style="font-weight:bold;color:#a71d5d;">break</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> rhs </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(alloc, tokens, prec </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> left);
+</span><span>    </span><span style="font-style:italic;color:#969896;">// etc
+</span></code></pre>
+<p>And that .. is pretty much it. Just map the new operator to the new expression that I have not written yet.</p>
+<h3 id="new-statements-and-expressions">New Statements and Expressions!</h3>
+<p>Two new expressions:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Expr </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    constant: </span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>,
+</span><span>
+</span><span>    @&quot;var&quot;: [:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>    assignment: </span><span style="font-weight:bold;color:#a71d5d;">BinOp</span><span>,
+</span><span>    </span><span style="font-style:italic;color:#969896;">// etc
+</span></code></pre>
+<p>And two new statements, finally. This is the entire <code>Stmt</code> type, with its formatter, too.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Stmt </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    @&quot;return&quot;: </span><span style="font-weight:bold;color:#a71d5d;">*Expr</span><span>,
+</span><span>    expr: </span><span style="font-weight:bold;color:#a71d5d;">*Expr</span><span>,
+</span><span>    </span><span style="color:#0086b3;">null</span><span>: void,
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">format</span><span>(
+</span><span>        self: </span><span style="color:#62a35c;">@This</span><span>(),
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">comptime </span><span style="color:#0086b3;">_</span><span>: []</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> u8,
+</span><span>        options: </span><span style="font-weight:bold;color:#a71d5d;">std.fmt.FormatOptions</span><span>,
+</span><span>        writer: </span><span style="font-weight:bold;color:#a71d5d;">anytype</span><span>,
+</span><span>    ) </span><span style="font-weight:bold;color:#a71d5d;">!void </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> w </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> options.width </span><span style="font-weight:bold;color:#a71d5d;">orelse </span><span style="color:#0086b3;">0</span><span>;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> writer.writeByteNTimes(</span><span style="color:#183691;">&#39;</span><span style="color:#0086b3;">\t</span><span style="color:#183691;">&#39;</span><span>, w);
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(self) {
+</span><span style="color:#0086b3;">            .@&quot;return&quot; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>expr</span><span style="font-weight:bold;color:#a71d5d;">| try</span><span> writer.print(</span><span style="color:#183691;">&quot;RETURN {}&quot;</span><span>, .{expr}),
+</span><span style="color:#0086b3;">            .expr </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>expr</span><span style="font-weight:bold;color:#a71d5d;">| try</span><span> writer.print(</span><span style="color:#183691;">&quot;{};&quot;</span><span>, .{expr}),
+</span><span style="color:#0086b3;">            .null </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> writer.print(</span><span style="color:#183691;">&quot;;&quot;</span><span>, .{}),
+</span><span>        }
+</span><span>    }
+</span><span>};
+</span></code></pre>
+<p>There is a new AST node, too! <code>Decl</code> is a variable declaration. (Maybe it should be <code>VarDecl</code> considering what is to come?) It is a simple one.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Decl </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    </span><span style="font-style:italic;color:#969896;">// no type because there is only one type so far: int
+</span><span>    name: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>    expr: </span><span style="font-weight:bold;color:#a71d5d;">?*Expr</span><span>,
+</span><span>};
+</span></code></pre>
+<p>Here is a fun note. In the AST proper, all the strings are backed by the source code. So they are <em>not</em> null-terminated (<code>[]const u8</code>). However, in the following stages, the strings are backed by <code>StringInterner</code>, so they <em>are</em> null-terminated (<code>[:0]const u8</code>). I could use normal slices or null-terminated <em>pointers</em> (<code>[*:0]const u8</code>) in the second case just as well, but extra safety does not hurt a toy compiler like this one.</p>
+<p>Also, since function bodies can include either declarations or statements, there is a need for a simple <code>BlockItem</code> union. Here it is with its formatter that just delegates to the sub type. I will probably never have to touch this again.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>BlockItem </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    D: </span><span style="font-weight:bold;color:#a71d5d;">Decl</span><span>,
+</span><span>    S: </span><span style="font-weight:bold;color:#a71d5d;">Stmt</span><span>,
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">format</span><span>(
+</span><span>        self: </span><span style="color:#62a35c;">@This</span><span>(),
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">comptime </span><span>fmt: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>        options: </span><span style="font-weight:bold;color:#a71d5d;">std.fmt.FormatOptions</span><span>,
+</span><span>        writer: </span><span style="font-weight:bold;color:#a71d5d;">anytype</span><span>,
+</span><span>    ) </span><span style="font-weight:bold;color:#a71d5d;">!void </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(self) {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">inline else =&gt; |</span><span>i</span><span style="font-weight:bold;color:#a71d5d;">| try</span><span> i.format(fmt, options, writer),
+</span><span>        }
+</span><span>    }
+</span><span>};
+</span></code></pre>
+<p>And then update <code>FuncDef</code> to have an collection of <code>BlockItem</code>s, rather than a pointer to one <code>Stmt</code>.Since these pointers are arena backed, it makes little sense for it to be an <code>ArrayList</code>, because this collection reallocates a lot. A better idea is either a linked list, or a segmented list which is a halfway between the two. The main downside is that I cannot just take a slice from either of these two collections. I will cross that bridge when I come to it.</p>
+<p>The Zig's <code>SinglyLinkedList</code> type has an <a href="https://www.openmymind.net/Zigs-New-LinkedList-API/">api change on the master</a>. So to avoid potential future churn in a future where I upgrade Zig's version, I am going to go with <code>SegmentedList</code>.</p>
+<p>Here I also revise an earlier design decision. Previously, every parsing structure returns a pointer to its result. But the new <code>FuncDef</code> makes no use of pointers, as they are added to the <code>SegmentedList</code>. So I rewrote all the functions to remove the allocation on the return value, and place instead on where it is actually needed at assignment. Plenty of refactoring.</p>
+<p>Because of extensive changes throughout almost every function in <code>parser.zig</code>, here is the entire file in its current state. I have not tried compiling it yet, so beware of typos.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> std </span><span style="font-weight:bold;color:#a71d5d;">= @import</span><span>(</span><span style="color:#183691;">&quot;std&quot;</span><span>);
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> ast </span><span style="font-weight:bold;color:#a71d5d;">= @import</span><span>(</span><span style="color:#183691;">&quot;ast.zig&quot;</span><span>);
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> lexer </span><span style="font-weight:bold;color:#a71d5d;">= @import</span><span>(</span><span style="color:#183691;">&quot;lexer.zig&quot;</span><span>);
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> utils </span><span style="font-weight:bold;color:#a71d5d;">= @import</span><span>(</span><span style="color:#183691;">&quot;utils.zig&quot;</span><span>);
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">parse_prgm</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ast.Prgm </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> func_def </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_func_def(arena, tokens);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> func_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.FuncDef, arena, func_def);
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// now that we are done, check the tokenizer is empty.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(tokens.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span style="color:#0086b3;">_</span><span style="font-weight:bold;color:#a71d5d;">| return error</span><span>.ExtraJunk;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .func_def </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> func_ptr };
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_func_def</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ast.FuncDef </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.type_int, tokens);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expect(.identifier, tokens);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.l_paren, tokens);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.keyword_void, tokens);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.r_paren, tokens);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.l_brace, tokens);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>body: std.SegmentedList(</span><span style="font-weight:bold;color:#a71d5d;">ast.BlockItem</span><span>, </span><span style="color:#0086b3;">0</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{};
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(</span><span style="color:#0086b3;">true</span><span>) {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> next_token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(next_token.tag </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .r_brace</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">break</span><span>;
+</span><span>        tokens.put_back(next_token);
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> item </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_block_item(arena, tokens);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> body.append(arena, item);
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> name, .body </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> body };
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_block_item</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ast.BlockItem </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> next_token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(next_token.tag) {
+</span><span style="color:#0086b3;">        .type_int </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expect(.identifier, tokens);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> new_token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>expr: </span><span style="font-weight:bold;color:#a71d5d;">?*ast.Expr = switch </span><span>(new_token.tag) {
+</span><span style="color:#0086b3;">                .equals </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>ret: {
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> res </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> expr_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, res);
+</span><span>
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.semicolon, tokens);
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">break</span><span> :ret expr_ptr;
+</span><span>                },
+</span><span style="color:#0086b3;">                .semicolon </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span style="color:#0086b3;">null</span><span>,
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; return error</span><span>.SyntaxError,
+</span><span>            };
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .D </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> name, .expr </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> expr } };
+</span><span>        },
+</span><span>        </span><span style="font-style:italic;color:#969896;">// statements
+</span><span style="color:#0086b3;">        .semicolon </span><span style="font-weight:bold;color:#a71d5d;">=&gt; return</span><span> .{ .S </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .null </span><span>},
+</span><span style="color:#0086b3;">        .keyword_return </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> expr </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> expr_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, expr);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.semicolon, tokens);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .S </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .@</span><span style="color:#183691;">&quot;return&quot; </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> expr_ptr } };
+</span><span>        },
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; </span><span>{
+</span><span>            tokens.put_back(next_token);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> expr </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> expr_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, expr);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.semicolon, tokens);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .S </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .expr </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> expr_ptr } };
+</span><span>        },
+</span><span>    }
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_expr</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>    min_prec: </span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ast.Expr </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> lhs </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_factor(arena, tokens);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> lhs_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, lhs);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> next_token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(next_token.tag.binop_precedence()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>r</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> prec, </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> left </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> r;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(prec </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span> min_prec) </span><span style="font-weight:bold;color:#a71d5d;">break</span><span>;
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> rhs </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, prec </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> left);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> rhs_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, rhs);
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>bin_op: </span><span style="font-weight:bold;color:#a71d5d;">ast.Expr.BinOp =</span><span> .{ lhs_ptr, rhs_ptr };
+</span><span>        lhs </span><span style="font-weight:bold;color:#a71d5d;">= switch </span><span>(next_token.tag) {
+</span><span style="color:#0086b3;">            .plus </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_add </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span style="color:#0086b3;">            .hyphen </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_sub </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span style="color:#0086b3;">            .asterisk </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_mul </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span style="color:#0086b3;">            .f_slash </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_div </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span style="color:#0086b3;">            .percent </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_rem </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span>
+</span><span style="color:#0086b3;">            .equals </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .assignment </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span>
+</span><span style="color:#0086b3;">            .double_ambersand </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_and </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span style="color:#0086b3;">            .double_pipe </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_or </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span style="color:#0086b3;">            .double_equals </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_eql </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span style="color:#0086b3;">            .bang_equals </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_neq </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span style="color:#0086b3;">            .lesser_than </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_lt </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span style="color:#0086b3;">            .greater_than </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_gt </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span style="color:#0086b3;">            .lesser_equals </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_le </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span style="color:#0086b3;">            .greater_equals </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> .{ .binop_ge </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bin_op },
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; unreachable</span><span>,
+</span><span>        };
+</span><span>
+</span><span>        next_token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>    }
+</span><span>
+</span><span>    tokens.put_back(next_token);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> lhs;
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_factor</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ast.Expr </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> current </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(current.tag) {
+</span><span style="color:#0086b3;">        .identifier </span><span style="font-weight:bold;color:#a71d5d;">=&gt; return</span><span> .{
+</span><span>            .@</span><span style="color:#183691;">&quot;var&quot; </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.buffer[current.loc.start</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>current.loc.end],
+</span><span>        },
+</span><span style="color:#0086b3;">        .number_literal </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> lit </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.buffer[current.loc.start</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>current.loc.end];
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.fmt.parseInt(u64, lit, </span><span style="color:#0086b3;">10</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">catch
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.InvalidInt;
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .constant </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> res };
+</span><span>        },
+</span><span style="color:#0086b3;">        .hyphen </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> inner_exp </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_factor(arena, tokens);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .unop_neg </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, inner_exp) };
+</span><span>        },
+</span><span style="color:#0086b3;">        .tilde </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> inner_exp </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_factor(arena, tokens);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .unop_not </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, inner_exp) };
+</span><span>        },
+</span><span style="color:#0086b3;">        .bang </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> inner_exp </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_factor(arena, tokens);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .unop_lnot </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, inner_exp) };
+</span><span>        },
+</span><span style="color:#0086b3;">        .l_paren </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> inner_exp </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.r_paren, tokens);
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> inner_exp;
+</span><span>        },
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; return error</span><span>.SyntaxError,
+</span><span>    }
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">inline fn </span><span style="font-weight:bold;color:#795da3;">expect</span><span>(
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">comptime </span><span>expected: </span><span style="font-weight:bold;color:#a71d5d;">lexer.Token.Tag</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!</span><span>ExpectResult(expected) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(tokens.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>actual</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(actual.tag </span><span style="font-weight:bold;color:#a71d5d;">!=</span><span> expected)
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(expected) {
+</span><span style="color:#0086b3;">            .identifier </span><span style="font-weight:bold;color:#a71d5d;">=&gt; return</span><span> tokens.buffer[actual.loc.start</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>actual.loc.end],
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; </span><span>{},
+</span><span>        }
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else return error</span><span>.SyntaxError;
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">ExpectResult</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">comptime </span><span>expected: </span><span style="font-weight:bold;color:#a71d5d;">lexer.Token.Tag</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">type </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(expected) {
+</span><span style="color:#0086b3;">        .identifier </span><span style="font-weight:bold;color:#a71d5d;">=&gt; return</span><span> []</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> u8,
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; return</span><span> void,
+</span><span>    }
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> Error </span><span style="font-weight:bold;color:#a71d5d;">=
+</span><span>    std.mem.Allocator.Error </span><span style="font-weight:bold;color:#a71d5d;">||
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">error</span><span>{
+</span><span>        SyntaxError,
+</span><span>        InvalidInt,
+</span><span>        ExtraJunk,
+</span><span>    };
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">test </span><span style="color:#183691;">&quot;precedence&quot; </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> t </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.testing;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> a_a </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.heap.ArenaAllocator.init(t.allocator);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer</span><span> a_a.deinit();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> a </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> a_a.allocator();
+</span><span>
+</span><span>    {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#183691;">&quot;3 * 4 + 5;&quot;</span><span>;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> tokens </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> lexer.Tokenizer.init(src);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> result </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(a, </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>tokens, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> t.expect(result</span><span style="font-weight:bold;color:#a71d5d;">.* ==</span><span style="color:#0086b3;"> .binop_add</span><span>);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> t.expectFmt(</span><span style="color:#183691;">&quot;(+ (* 3 4) 5)&quot;</span><span>, </span><span style="color:#183691;">&quot;{}&quot;</span><span>, .{result});
+</span><span>    }
+</span><span>    {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#183691;">&quot;4 + 3 &amp;&amp; -17 * 4 &lt; 5;&quot;</span><span>;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> tokens </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> lexer.Tokenizer.init(src);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> result </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(a, </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>tokens, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> t.expect(result</span><span style="font-weight:bold;color:#a71d5d;">.* ==</span><span style="color:#0086b3;"> .binop_and</span><span>);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> t.expectFmt(</span><span style="color:#183691;">&quot;(&amp;&amp; (+ 4 3) (&lt; (* (- 17) 4) 5))&quot;</span><span>, </span><span style="color:#183691;">&quot;{}&quot;</span><span>, .{result});
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>Well, that was a trip. The <code>ir_gen</code> functions are broken too so they were replaced by a stub for now.</p>
+<p>Here is the C file I am using as my science mouse this chapter:</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> a </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">2147483646</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> b </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> c </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> a </span><span style="font-weight:bold;color:#a71d5d;">/ </span><span style="color:#0086b3;">6 </span><span style="font-weight:bold;color:#a71d5d;">+ !</span><span>b;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> c </span><span style="font-weight:bold;color:#a71d5d;">* </span><span style="color:#0086b3;">2 </span><span style="font-weight:bold;color:#a71d5d;">==</span><span> a </span><span style="font-weight:bold;color:#a71d5d;">- </span><span style="color:#0086b3;">1431655762</span><span>;
+</span><span>}
+</span></code></pre>
+<p>And this is the parser output. It oviously does not cover every path the code can take but that's what a test suite is for. Which they all pass, so hooray.</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>PROGRAM
+</span><span>	FUNCTION main
+</span><span>		int a &lt;- 2147483646;
+</span><span>		int b &lt;- 0;
+</span><span>		int c &lt;- (+ a (! b));
+</span><span>		RETURN (== c (- a 1431655762))
+</span></code></pre>
+<p>It is important to keep in mind that the test suite at this stage does not check for correct logic, but for whether the compilers fails the programs it should. Correct logic is checked either by custom unit tests (which I discussed last chapter) and testing the final compiler output.</p>
+<p>Wait hold on. Where did the <code>a/6</code> go?</p>
+<h3 id="unit-testing-considered-useful">Unit Testing Considered Useful</h3>
+<p>Checking the unit tests I did last chapter, they are failing too. What gives? The code is all up there. Can you spot the error?</p>
+<p>Poking around, I realized the error happened when I changed all functions to return the nodes immediately rather than pointers to them. It is this pair of lines in the beginning of <code>parse_expr</code>:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">var</span><span> lhs </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_factor(arena, tokens);
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> lhs_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, lhs);
+</span></code></pre>
+<p>And then I keep the first and only <code>lhs_ptr</code> around assigning to the left side of all following expressions. Bah. Running the fix on the C code snippet above gets me this result now.</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>PROGRAM
+</span><span>	FUNCTION main
+</span><span>		int a &lt;- 2147483646;
+</span><span>		int b &lt;- 0;
+</span><span>		int c &lt;- (+ (/ a 6) (! b));
+</span><span>		RETURN (== (* c 2) (- a 1431655762))
+</span></code></pre>
+<p>This is the new and improved <code>parse_expr</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_expr</span><span>(
+</span><span>    arena: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>    min_prec: </span><span style="font-weight:bold;color:#a71d5d;">u8</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ast.Expr </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> lhs </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_factor(arena, tokens);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> next_token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer</span><span> tokens.put_back(next_token);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(next_token.tag.binop_precedence()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>r</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> prec, </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> left </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> r;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(prec </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span> min_prec) </span><span style="font-weight:bold;color:#a71d5d;">break</span><span>;
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> lhs_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, lhs);  </span><span style="font-style:italic;color:#969896;">// &lt;-- fix
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> rhs </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, prec </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> left);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> rhs_ptr </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(ast.Expr, arena, rhs);
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>bin_op: </span><span style="font-weight:bold;color:#a71d5d;">ast.Expr.BinOp =</span><span> .{ lhs_ptr, rhs_ptr };
+</span><span>        lhs </span><span style="font-weight:bold;color:#a71d5d;">= switch </span><span>(next_token.tag) {
+</span><span>            </span><span style="font-style:italic;color:#969896;">// same as before
+</span><span>        };
+</span><span>
+</span><span>        next_token </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> lhs;
+</span><span>}
+</span></code></pre>
+<hr />
+<h2 id="semantic-analysis">Semantic Analysis</h2>
+<p>Oh that's a new one. This is where things like <code>2 = a * 3</code> are rejected. Other compilers seem to call this pass <code>sema</code>, so I am adding a <code>sema.zig</code>. This file is concerned with transforming and checking the AST: double declarations, no declarations, shadowing, scoping, what have you.</p>
+<p>The pseudocode functions in the Book have a <code>variable_map</code> input. it maps each name, apparently, to a unique name (that I assume will be interned later?). I am unsure how this would look eventually, but for now I will be naive and use a <code>std.StringHashMap([]const u8)</code>.</p>
+<p>Here is the Book's <code>resolve_decl</code> pseudocode into Zig-ish pseudocode:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">resolve_decl</span><span>(
+</span><span>    decl: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Decl</span><span>,
+</span><span>    variable_map: </span><span style="font-weight:bold;color:#a71d5d;">std.StringHashMap</span><span>([]</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>),
+</span><span>) Error</span><span style="font-weight:bold;color:#a71d5d;">!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(variable_map.contains(decl.name))
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.DuplicateVariableDecl;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> unique_name </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>make_temporary(); </span><span style="font-style:italic;color:#969896;">// todo
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> variable_map.put(decl.name, unique_name);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>init: </span><span style="font-weight:bold;color:#a71d5d;">?*Expr = if </span><span>(decl.init) </span><span style="font-weight:bold;color:#a71d5d;">|*</span><span>expr</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_expr(expr, variable_map) </span><span style="font-style:italic;color:#969896;">// todo
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>        </span><span style="color:#0086b3;">null</span><span>;
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// where is the expr allocated?
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> unique_name, .init </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> init };
+</span><span>}
+</span></code></pre>
+<p>So many todos and questions. This requires filling up piece by piece.</p>
+<h3 id="new-names-for-old-variables">New Names for Old Variables</h3>
+<p>First of all, the new <code>unique_name</code>. This is going to be used, as is, in the next compiler passes. So it makes sense for it to be on the StringInterner. Which means, the StringInterner <em>and</em> its backing allocator should be passed into the function. I am going to save myself some trouble and just go ahead and create a <code>Boilerplate</code> struct like I did in <code>ir_gen</code> previously.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-style:italic;color:#969896;">// first pass
+</span><span style="font-weight:bold;color:#a71d5d;">const </span><span>Boilerplate </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    gpa: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    strings: </span><span style="font-weight:bold;color:#a71d5d;">*utils.StringInterner</span><span>,
+</span><span>    variable_map: </span><span style="font-weight:bold;color:#a71d5d;">*</span><span>std.StringHashMapUnmanaged([:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> u8),
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">make_temporary</span><span>(
+</span><span>        self: </span><span style="color:#62a35c;">@This</span><span>(),
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">comptime </span><span>prefix: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>    ) Error</span><span style="font-weight:bold;color:#a71d5d;">!</span><span>[:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8 </span><span>{
+</span><span>        </span><span style="font-style:italic;color:#969896;">// todo
+</span><span>    }
+</span><span>};
+</span></code></pre>
+<p>The next problem is that, to make sure the variable is unique in future compiler passes, it should use the counter. The counter is currently self contained within <code>ir_gen</code>'s <code>make_temporary</code>, but now it has to be elevated into its own thing. So, I am changing it to make it a method of <code>StringInterner</code>, and have both new and old <code>make_temporary</code> functions use that one.</p>
+<p>This is the new method on <code>StringInterner</code>:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">make_temporary</span><span>(
+</span><span>    self: </span><span style="font-weight:bold;color:#a71d5d;">*StringInterner</span><span>,
+</span><span>    gpa: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    prefix: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!</span><span>[:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8 </span><span>{
+</span><span>    </span><span style="font-style:italic;color:#969896;">// zig static variables
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>static </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>counter: </span><span style="font-weight:bold;color:#a71d5d;">usize = </span><span style="color:#0086b3;">0</span><span>;
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>buf: [</span><span style="color:#0086b3;">16</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">u8 = </span><span style="color:#0086b3;">undefined</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name_buf </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> std.fmt.bufPrint(
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>buf,
+</span><span>        </span><span style="color:#183691;">&quot;{s}.{}&quot;</span><span>,
+</span><span>        .{ (</span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(prefix.len </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">0</span><span>) </span><span style="color:#183691;">&quot;tmp&quot; </span><span style="font-weight:bold;color:#a71d5d;">else</span><span> prefix), static.counter },
+</span><span>    );
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> self.get_or_put(gpa, name_buf);
+</span><span>    static.counter </span><span style="font-weight:bold;color:#a71d5d;">+= </span><span style="color:#0086b3;">1</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> name.string;
+</span><span>}
+</span></code></pre>
+<p>One change from the previous function: <code>prefix</code> is not <code>comptime</code> known any more as it can be a user-specified variable. I am not quite sure, to be honest, if this code compiles, but I will find out by the end of this section. This is the new <code>make_temporary</code> in both <code>ir_gen</code> and the new <code>sema</code>. Note that <code>self</code> (and <code>Error</code> for that matter) are different types for both functions, but it has the same interface.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">make_temporary</span><span>(
+</span><span>    self: </span><span style="color:#62a35c;">@This</span><span>(),
+</span><span>    prefix: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>) Error</span><span style="font-weight:bold;color:#a71d5d;">!</span><span>[:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8 </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return try</span><span> self.strings.make_temporary(self.alloc, prefix);
+</span><span>}
+</span></code></pre>
+<h3 id="resolutions">Resolutions</h3>
+<p>This is the new <code>resolve_decl</code> after the nip and tuck and adjusting to change the <code>Decl</code> in place:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">resolve_decl</span><span>(
+</span><span>    bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate</span><span>,
+</span><span>    decl: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Decl</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(bp.variable_map.contains(decl.name))
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.DuplicateVariableDecl;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> unique_name </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> bp.make_temporary(decl.name);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.variable_map.put(bp.gpa, decl.name, unique_name);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(decl.init) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>expr</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_expr(bp, expr);
+</span><span>}
+</span></code></pre>
+<p>Only <code>resolve_expr</code> remains a stub. So naturally the next step is the relatively simple <code>resolve_stmt</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">resolve_stmt</span><span>(
+</span><span>    bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate</span><span>,
+</span><span>    stmt: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Stmt</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(stmt</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>) {
+</span><span style="color:#0086b3;">        .@&quot;return&quot;</span><span>,</span><span style="color:#0086b3;"> .expr </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>expr</span><span style="font-weight:bold;color:#a71d5d;">| try </span><span>resolve_expr(bp, expr),
+</span><span style="color:#0086b3;">        .null </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{},
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>And now this is <code>resolve_expr</code>. To be frank I am not quite sure I still have the right incantations regarding <code>*</code> and <code>.*</code> and <code>&amp;</code>. I trust the compiler will correct me when it comes to it.<sup class="footnote-reference" id="fr-compiler-1"><a href="#fn-compiler">2</a></sup></p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">resolve_expr</span><span>(
+</span><span>    bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate</span><span>,
+</span><span>    expr: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Expr</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(expr</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>) {
+</span><span style="color:#0086b3;">        .constant </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{},
+</span><span style="color:#0086b3;">        .assignment </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>b</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(b.@</span><span style="color:#183691;">&quot;0&quot;</span><span style="font-weight:bold;color:#a71d5d;">.* !=</span><span style="color:#0086b3;"> .@&quot;var&quot;</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.InvalidLValue;
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_expr(bp, b.@</span><span style="color:#183691;">&quot;0&quot;</span><span>);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_expr(bp, b.@</span><span style="color:#183691;">&quot;1&quot;</span><span>);
+</span><span>        },
+</span><span style="color:#0086b3;">        .@&quot;var&quot; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>name</span><span style="font-weight:bold;color:#a71d5d;">|</span><span> expr</span><span style="font-weight:bold;color:#a71d5d;">.* = if </span><span>(bp.variable_map.get(name)) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>un</span><span style="font-weight:bold;color:#a71d5d;">|
+</span><span>            .{ .@</span><span style="color:#183691;">&quot;var&quot; </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> un }
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.UndeclaredVariable,
+</span><span style="color:#0086b3;">        .unop_neg</span><span>,
+</span><span style="color:#0086b3;">        .unop_not</span><span>,
+</span><span style="color:#0086b3;">        .unop_lnot</span><span>,
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>u</span><span style="font-weight:bold;color:#a71d5d;">| try </span><span>resolve_expr(bp, u),
+</span><span style="color:#0086b3;">        .binop_add</span><span>,
+</span><span style="color:#0086b3;">        .binop_sub</span><span>,
+</span><span style="color:#0086b3;">        .binop_mul</span><span>,
+</span><span style="color:#0086b3;">        .binop_div</span><span>,
+</span><span style="color:#0086b3;">        .binop_rem</span><span>,
+</span><span style="color:#0086b3;">        .binop_and</span><span>,
+</span><span style="color:#0086b3;">        .binop_or</span><span>,
+</span><span style="color:#0086b3;">        .binop_eql</span><span>,
+</span><span style="color:#0086b3;">        .binop_neq</span><span>,
+</span><span style="color:#0086b3;">        .binop_ge</span><span>,
+</span><span style="color:#0086b3;">        .binop_gt</span><span>,
+</span><span style="color:#0086b3;">        .binop_le</span><span>,
+</span><span style="color:#0086b3;">        .binop_lt</span><span>,
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>b</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_expr(bp, b.@</span><span style="color:#183691;">&quot;0&quot;</span><span>);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_expr(bp, b.@</span><span style="color:#183691;">&quot;1&quot;</span><span>);
+</span><span>        },
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>This leaves <code>resolve_prgm</code> and <code>resolve_func_def</code> which are barely interesting, if not for setting up the <code>Boilerplate</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">resolve_prgm</span><span>(
+</span><span>    gpa: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    strings: </span><span style="font-weight:bold;color:#a71d5d;">*utils.StringInterner</span><span>,
+</span><span>    prgm: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Prgm</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>variable_map: std.StringHashMapUnmanaged([:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> u8) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .empty</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate =</span><span> .{
+</span><span>        .gpa </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> gpa,
+</span><span>        .strings </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> strings,
+</span><span>        .variable_map </span><span style="font-weight:bold;color:#a71d5d;">= &amp;</span><span>variable_map,
+</span><span>    };
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>resolve_func_def(bp, prgm.func_def);
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">resolve_func_def</span><span>(
+</span><span>    bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate</span><span>,
+</span><span>    func_def: </span><span style="font-weight:bold;color:#a71d5d;">*ast.FuncDef</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> func_def.body.iterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>item</span><span style="font-weight:bold;color:#a71d5d;">| switch </span><span>(item</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>) {
+</span><span style="color:#0086b3;">        .S </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>s</span><span style="font-weight:bold;color:#a71d5d;">| try </span><span>resolve_stmt(bp, s),
+</span><span style="color:#0086b3;">        .D </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>d</span><span style="font-weight:bold;color:#a71d5d;">| try </span><span>resolve_decl(bp, d),
+</span><span>    };
+</span><span>}
+</span></code></pre>
+<p>Now, the proof of the pudding is in the eating. Let's wire it in the compiler driver (with an all new <code>validate</code> option), and see the results.</p>
+<h3 id="nospaceleft">NoSpaceLeft</h3>
+<p>Running the test suite came up with odd and confusing errors and long info dumps. Time to investigate.</p>
+<p>First of all, run the new code against the sample C program from before. and it fails with a .. memory leak? Turning off the memory leak detection (which is simple enough with Zig's <code>DebugAllocator</code>) It passes fine, but the variable names seem unchanged. Hmm.</p>
+<p>Trying the test suite again with the turned off leak checking (just to see if it passes), however, is also failing with <code>NoSpaceLeft</code>. One file seems to fail, and it is following:</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> first_variable </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">1</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">int</span><span> second_variable </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">2</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> first_variable </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> second_variable;
+</span><span>}
+</span></code></pre>
+<p>Looks simple enough. Running it through, the zig compilers gives me a very helpful, and very very long, stack tarce. It fails in <code>make_temporary</code>. Oh the <em>buffer</em> does not have enough space. I made a 16 byte buffer to avoid a heap allocation. Silly me. Let's change it to a 64 byte buffer.<sup class="footnote-reference" id="fr-buffer-1"><a href="#fn-buffer">3</a></sup></p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-style:italic;color:#969896;">// was
+</span><span style="font-weight:bold;color:#a71d5d;">var </span><span>buf: [</span><span style="color:#0086b3;">16</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">u8 = </span><span style="color:#0086b3;">undefined</span><span>;
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name_buf </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> std.fmt.bufPrint(
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>buf,
+</span><span>    </span><span style="color:#183691;">&quot;{s}.{}&quot;</span><span>,
+</span><span>    .{ (</span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(prefix.len </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">0</span><span>) </span><span style="color:#183691;">&quot;tmp&quot; </span><span style="font-weight:bold;color:#a71d5d;">else</span><span> prefix), static.counter },
+</span><span>);
+</span><span style="font-style:italic;color:#969896;">// becomes
+</span><span style="font-weight:bold;color:#a71d5d;">var </span><span>buf: [</span><span style="color:#0086b3;">64</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">u8 = </span><span style="color:#0086b3;">undefined</span><span>;
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name_buf </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> std.fmt.bufPrint(
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>buf,
+</span><span>    </span><span style="color:#183691;">&quot;{s}.{}&quot;</span><span>,
+</span><span>    .{ (</span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(prefix.len </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">0</span><span>) </span><span style="color:#183691;">&quot;tmp&quot; </span><span style="font-weight:bold;color:#a71d5d;">else</span><span> prefix), static.counter },
+</span><span>);
+</span></code></pre>
+<p>Well, this fixes the issue at least. This is the output of <code>--validate</code> on that file now:</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>PROGRAM
+</span><span>	FUNCTION main
+</span><span>		int first_variable &lt;- 1;
+</span><span>		int second_variable &lt;- 2;
+</span><span>		RETURN (+ first_variable.0 second_variable.1)
+</span></code></pre>
+<p>As you can see, the names are updated alright, but apparently not in <code>Decl</code>'s <code>name</code> field. That's a silly oversight. Let's fix that now.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>    </span><span style="font-style:italic;color:#969896;">// end of resolve_decl
+</span><span>    decl.name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> unique_name; </span><span style="font-style:italic;color:#969896;">// &lt;-- new line
+</span><span>}
+</span></code></pre>
+<p>Well this takes care of that. Now let me figure out the memory leak.</p>
+<h3 id="leak">Leak</h3>
+<p>Let's run the same program again and look through the call trace the zig compiler very helpfully provides.</p>
+<p>Oh I forgot to deinit <code>variable_map</code>. Silly me. This would happen in <code>resolve_prgm</code> because I have no use for it afterwards right now.</p>
+<p>Yay no memory leaks. That ws easy.</p>
+<hr />
+<h2 id="ir-generation">IR Generation</h2>
+<p>No changes to the IR syntax tree today. Only generating IR for the new AST nodes. This also means there are no assembly changes either. Almost there to a stable IR backend.<sup class="footnote-reference" id="fr-ir-1"><a href="#fn-ir">4</a></sup></p>
+<p>The most interesting thing in here is that variable declarations are simply discarded. They have done their job in semantic analysis, and now they are shown the door. But let's go backwards.</p>
+<p>The new expressions emitting IR are just <code>@"var"</code> and <code>assignment</code>. <code>var</code> is cast to a null terminated pointer but that is it. It is already backed by the interner from the semantic analysis phase. <code>assignment</code> puts the items in a weird bizarro order, where <code>dst</code> is the first item.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="color:#0086b3;">.@&quot;var&quot; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>v</span><span style="font-weight:bold;color:#a71d5d;">| return</span><span> .{ .variable </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">@ptrCast</span><span>(v) },
+</span><span style="color:#0086b3;">.assignment </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>b</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-style:italic;color:#969896;">// bizarro order
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dst </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, b.@</span><span style="color:#183691;">&quot;0&quot;</span><span>); </span><span style="font-style:italic;color:#969896;">// guaranteed to be a var
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, b.@</span><span style="color:#183691;">&quot;1&quot;</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .copy </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(src, dst) });
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> dst;
+</span><span>},
+</span></code></pre>
+<p>The new statements just pass through:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">stmt_emit_ir</span><span>(
+</span><span>    bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate</span><span>,
+</span><span>    stmt: </span><span style="font-weight:bold;color:#a71d5d;">*const ast.Stmt</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(stmt</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>) {
+</span><span style="color:#0086b3;">        .null </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{},
+</span><span style="color:#0086b3;">        .@&quot;return&quot; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>e</span><span style="font-weight:bold;color:#a71d5d;">| try</span><span> bp.append(.{
+</span><span>            .ret </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, e),
+</span><span>        }),
+</span><span style="color:#0086b3;">        .expr </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>e</span><span style="font-weight:bold;color:#a71d5d;">| </span><span style="color:#0086b3;">_ </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, e),
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>The interesting new part is <code>func_def_emit_ir</code>. Since <code>body</code> is now a list of stuff rather than just one statement, I need to iterate over it and generate IR from each item. But there is no <code>decl_emit_ir</code> yet, so I will do that first. If there is no initialization expression, do nothing. If there is, evaluate the expression and copy it to the variable's name.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">decl_emit_ir</span><span>(
+</span><span>    bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate</span><span>,
+</span><span>    decl: </span><span style="font-weight:bold;color:#a71d5d;">*const ast.Decl</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(decl.init) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>e</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(bp, e);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> bp.append(.{ .copy </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(src, .{ .variable </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">@ptrCast</span><span>(decl.name) }) });
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>Now <code>func_def_emit_ir</code> has to construct the IR instructions in a body. So a loop over the block items to process them one at a time is the simplest way to do it. The Book recommends adding a simple <code>return 0;</code> instruction to the end as an edgecase for functions written without a return value. This is the C standard for <code>main</code>, but as omitting a return value is undefined behaviour for other functions, I can just do whatever, so adding a <code>return 0</code> is entirely within the spec. It would not get processed if the code author did not forget their <code>return</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">func_def_emit_ir</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    strings: </span><span style="font-weight:bold;color:#a71d5d;">*utils.StringInterner</span><span>,
+</span><span>    func_def: </span><span style="font-weight:bold;color:#a71d5d;">*const ast.FuncDef</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">Error!ir.FuncDef </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> strings.get_or_put(alloc, func_def.name);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>instrs: std.ArrayListUnmanaged(ir.Instr) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .empty</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>bp: </span><span style="font-weight:bold;color:#a71d5d;">Boilerplate =</span><span> .{
+</span><span>        .alloc </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> alloc,
+</span><span>        .strings </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> strings,
+</span><span>        .instrs </span><span style="font-weight:bold;color:#a71d5d;">= &amp;</span><span>instrs,
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> iter </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> func_def.body.constIterator(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">while </span><span>(iter.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>item</span><span style="font-weight:bold;color:#a71d5d;">| switch </span><span>(item</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>) {
+</span><span style="color:#0086b3;">        .S </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>s</span><span style="font-weight:bold;color:#a71d5d;">| try </span><span>stmt_emit_ir(bp, s),
+</span><span style="color:#0086b3;">        .D </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>d</span><span style="font-weight:bold;color:#a71d5d;">| try </span><span>decl_emit_ir(bp, d),
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> instrs.append(alloc, .{ .ret </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{ .constant </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0 </span><span>} });
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> name.string, .instrs </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> instrs };
+</span><span>}
+</span></code></pre>
+<p>And that's it. There is no new assembly generation because there are no new IR instructions. So time to test the whole shebang, which it all passes. So Hurray.</p>
+<hr />
+<h2 id="lessons-learned-rant-about-zig"><del>Lessons Learned</del> Rant About Zig</h2>
+<p>How much I hate Zig's unergonomic optionals, for one, and how unergonomic integer literals are, for two.</p>
+<p>For all the good Zig has, some things are just way, way harder than they have any right to be. Take for example <code>parse_expr</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">while </span><span>(current.tag.binop_precedence()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>r</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> prec, </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> left </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> r;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(prec </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span> min_prec) </span><span style="font-weight:bold;color:#a71d5d;">break</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> rhs </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, prec </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> left); </span><span style="font-style:italic;color:#969896;">// &lt;- look here
+</span><span>    </span><span style="font-style:italic;color:#969896;">// snip --
+</span></code></pre>
+<p>The reason I made <code>binop_precedence</code> return a <code>u8</code> for left-associativity, is how absurdly difficult it is and ugly it is to work with otherwise.</p>
+<p>The natural way of modeling this is to use either a <code>bool</code> or an enum. But if <code>left</code> was a bool, this very normal looking, perfectly readable code would not compile:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> rhs </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, prec </span><span style="font-weight:bold;color:#a71d5d;">+ if </span><span>(left) </span><span style="color:#0086b3;">1 </span><span style="font-weight:bold;color:#a71d5d;">else </span><span style="color:#0086b3;">0</span><span>);
+</span></code></pre>
+<p>The reason for that is integer literals (<code>1</code> and <code>0</code> in this snippet) are of type <code>comptime_int</code>. The type inference is not smart enough to get there.</p>
+<p>Which is like, fine, whatever. That would not be an issue if it was not for the fact you literally <strong>cannot</strong> create typed literals. <code>1u8</code>, like Rust or Odin would do, is not the Zig way. It is not <em>explicit</em> enough. The way to do it is <code>@as(u8, 1)</code>. No joke.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> rhs </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(arena, tokens, prec </span><span style="font-weight:bold;color:#a71d5d;">+ if </span><span>(left) </span><span style="color:#62a35c;">@as</span><span>(u8, </span><span style="color:#0086b3;">1</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">else </span><span style="color:#0086b3;">0</span><span>);
+</span></code></pre>
+<p>At least the type inference is smart enough to infer the <code>0</code>, thank god.</p>
+<p>Wait, you say, you can cast. So why not cast the <code>bool</code> to a <code>u8</code>?</p>
+<p>Haha you fool. Casting a <code>bool</code> to an integer makes no sense! There is a special builtin for that, called <code>@intFromBool</code>. Why not use that, you ask? Because this built in returns a <code>u1</code>. Which is really a <code>u8</code> in memory but the type system will not automatically cast it to the wider integer because ... fuck if I know.<sup class="footnote-reference" id="fr-niche-1"><a href="#fn-niche">5</a></sup> So you end up with this beauty: <code>@as(u8, @intFromBool(left))</code>.</p>
+<p>Absolutely inane design decisions that all they do is annoy and frustrate the user. So I just returned a <code>u8</code> from <code>binop_precedence</code>. Incorrect, but less fuss.</p>
+<p>I will leave the optionals rant for later. Meanwhile, enjoy this contraption that should have been in the core language. (Yes it does work.)</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">compare_optional</span><span>(
+</span><span>    opt: </span><span style="font-weight:bold;color:#a71d5d;">anytype</span><span>,
+</span><span>    value: </span><span style="color:#62a35c;">@typeInfo</span><span>(
+</span><span>        </span><span style="color:#62a35c;">@typeInfo</span><span>(</span><span style="color:#62a35c;">@TypeOf</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">opt</span><span>)).optional.child,
+</span><span>    ).@</span><span style="color:#183691;">&quot;union&quot;</span><span>.tag_type</span><span style="font-weight:bold;color:#a71d5d;">.?</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">bool </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return </span><span>((opt </span><span style="font-weight:bold;color:#a71d5d;">orelse return </span><span style="color:#0086b3;">false</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">==</span><span> value);
+</span><span>}
+</span></code></pre>
+<hr />
+<footer class="footnotes">
+<ol class="footnotes-list">
+<li id="fn-ternary">
+<p>I speak, of course, of the beloved ternary operator. <a href="#fr-ternary-1">↩</a></p>
+</li>
+<li id="fn-compiler">
+<p>I will have you know I went back and corrected things as the compiler bid me, so now it looks like I got it right the first time. <a href="#fr-compiler-1">↩</a></p>
+</li>
+<li id="fn-buffer">
+<p>I looked it up, and the maximum length for internal C identifirs is 63 bytes, and anything afterwards is discarded. This is tighter, as it does not account for the added stuff, but whatever. <a href="#fr-buffer-1">↩</a></p>
+</li>
+<li id="fn-ir">
+<p>Not even close. <a href="#fr-ir-1">↩</a></p>
+</li>
+<li id="fn-niche">
+<p>To add insult to injury, <code>?u1</code> is not niche optimized and has a size of two bytes, despite it being only two bits of info. <a href="#fr-niche-1">↩</a></p>
+</li>
+</ol>
+</footer>
+</main>
+
+			
+			
+				<footer>
+					<small>
+						
+							<a class="mylink" href="mailto:a.sibahi@gmail.com" rel="me">Mail</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;x.com&#x2F;@asibahi" rel="me">Twitter</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;typo.social&#x2F;@asibahi" rel="me">typo.social</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;sr.ht&#x2F;~asibahi&#x2F;" rel="me">SourceHut</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;github.com&#x2F;asibahi" rel="me">GitHub</a>
+						
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;about&#x2F;">Cat</a>
+						
+					</small>
+				</footer>
+			
+		</div>
+	</body>
+</html>

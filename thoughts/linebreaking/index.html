@@ -1,0 +1,321 @@
+<!doctype html>
+<html  dir="ltr" >
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Musings"
+		/>
+		<title>Abdul Rahman Sibahi | Knuth&#x27;s Linebreaking Algorithm for non-Programmers</title>
+		<link rel="stylesheet" href="https://blog.ar-ms.me/style.css?h=5e9f4e540307a223aec7" />
+	</head>
+
+	<body>
+
+		This website has moved to <a href="http://blog.ar-ms.me/">blog.ar-ms.me</a>. No further content will be published on the  <a href="https://www.un.org/unispal/document/a-hrc-59-23-from-economy-of-occupation-to-economy-of-genocide-report-special-rapporteur-francesca-albanese-palestine-2025/">Github</a> hosted version.
+
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			
+	<header class="space">
+		<a href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;"> ⏏️ </a>
+
+		
+			<h1>Knuth&#x27;s Linebreaking Algorithm for non-Programmers</h1>
+			
+
+			<nav>
+				
+					<p class="secondary">2023-04-02</p>
+				 
+				<details class="secondary">
+					<summary> Contents </summary>
+					<ul>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/linebreaking/#input">Input</a>
+							
+							<ul>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/thoughts/linebreaking/#the-text">The Text</a>
+								</li>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/thoughts/linebreaking/#the-line-width">The Line Width</a>
+								</li>
+								
+							</ul>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/linebreaking/#the-algorithm">The Algorithm</a>
+							
+							<ul>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/thoughts/linebreaking/#description">Description</a>
+								</li>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/thoughts/linebreaking/#pseudocode">Pseudocode</a>
+								</li>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/thoughts/linebreaking/#adjustments">Adjustments</a>
+								</li>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/thoughts/linebreaking/#real-world-example-typst">Real world example: Typst</a>
+								</li>
+								
+							</ul>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/linebreaking/#what-about-build-line">What about build_line() ?</a>
+							
+							<ul>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/thoughts/linebreaking/#pseudocode-1">Pseudocode</a>
+								</li>
+								
+							</ul>
+							
+						</li>
+						
+					</ul>
+				</details>
+				
+			</nav>
+		
+	</header>
+
+			
+			
+	<main><p>I am an architect (the physical kind), not a programmer, and I am interested in Typesetting and fonts. The common wisdom online is that Knuth's linebreaking algorithm, implemented for TeX some time back, is the be all end all way to typeset text on a printed page. But there are no clear explanations of what the algorithm <em>is</em>, beyond handwavey explanations of boxes and glue and penalties. I, being a lemming, strove to understand the algorithm, and I believe I can explain it succinctly. I promise not to use the phrase "Dynamic Programming".</p>
+<p><a href="http://www.eprg.org/G53DOC/pdfs/knuth-plass-breaking.pdf">Here is Donald Knuth and Michael Plass's 1981 paper</a>. It is more thorough and rigorous than what I am writing here. <a href="https://github.com/jaroslov/knuth-plass-thoughts/blob/master/plass.md">Here is another article explaining the algorithm in a different manner</a>.</p>
+<p>For the rest of this article I will assume paragraphs are in one language and one script, so no bi-directional text complications. There is also no discussion of TeX's other features because this is not about TeX.</p>
+<p><img src="https://blog.ar-ms.me/thoughts/linebreaking/Screenshot%202023-04-01%20at%203.26.51%20AM.png" alt="Paragraph example" /></p>
+<h2 id="input">Input</h2>
+<h3 id="the-text">The Text</h3>
+<p>The most important input is the text. However, the algorithm does not deal with the raw encoded text. You need to process your text to extract <strong>boxes</strong>, <strong>glue</strong>, and <strong>breakpoints</strong>.</p>
+<p>The first process is called "Shaping". The shaper (the most famous of which is HarfBuzz), takes the input text and the font you want to use and gives you three things: what glyphs (from the font) to use, their order, and their positioning (think kerning). In other words, it gives you a series of <strong>boxes</strong>. The linebreaking algorithm does not care what is <em>inside</em> the box. It only cares about the box's "width", or the horizontal advance.</p>
+<p>The shaper also tells you that which characters from your text are whitespace, and be stretched and squashed as needed. The space is the most famous of those, but there are others. These are called <strong>glue</strong>. Each glue character has a default width, a minimum width, and a maximum width. (The paper expresses the minimum and maximum as ratios, and I do not quite understand that specific part to be honest as it is mathier than what I know.) In practical terms, this says that the space can't be so small that words are glued together, and it can't be so large that most of the line becomes whitespace. These values can be based on the font or the script or the designer or whoever. The minimum could even be zero should the designer wishes.</p>
+<p>Also, you need to run your input text through a <strong>breakpoint</strong>-finding algorithm. This is to say, you need to know <em>where</em> you can break your text into lines. You can't just break the line arbitrarily anywhere, or only at glue (think hyphenation). The Unicode ICU library has the tools for that.</p>
+<p>Knuth's name for breakpoints is <strong>penalties</strong>, and that includes mandatory breakpoints, such as the end of paragraphs, and undesirable breakpoints, such as hyphenated words. In Knuth's implementation, penalties have a width. Usually it is zero, but when you break at a hyphen, you need to add the hyphen's width. If you want to implement trailing punctuation (a rather nifty typographic trick), you give the penalty <em>after</em> the punctuation a <em>negative</em> width. Look at the paper for more detail.</p>
+<p>Note that boxes having a fixed width is a rather hefty assumption. It only works for Latin typesetting, and only works for fixed fonts. In other scripts, characters may have alternate shapes that may be wider or narrower. There is even an OpenType feature for that, called Justification Alternates. Many variable fonts have axis that only control specific letters. See an <a href="https://www.29lt.com/product/29lt-okaso/">Arabic and Latin example</a> and an <a href="https://simoncozens.github.io/more-on-newbreak/">Armenian one</a>. The Knuth-Plass algorithm as usually implemented does not know how to deal with either of these features, and because Latin-centric software designers, we Arabic speakers are stuck with ugly justified text. But I am coming to that later.</p>
+<p>Back on track: you get your text. You run through the shaper, and the Unicode ICU library, and you get two lists.</p>
+<ul>
+<li>A list of glyphs, expressed as fixed width <strong>boxes</strong> (letters), and stretchable, squashable <strong>glue</strong> (white space).</li>
+<li>A list of <strong>breakpoints</strong>, places you can break the line. They have an associated value called <strong>penalties</strong> which ranges from -100,000 (never break here) to +100,000 (must break).</li>
+</ul>
+<h3 id="the-line-width">The Line Width</h3>
+<p>Self explanatory really. You have a specific line width you want to justify your text into. Or even a series of line widths for text (say for text typeset in a circle).</p>
+<h2 id="the-algorithm">The Algorithm</h2>
+<h3 id="description">Description</h3>
+<p>This beautiful graph from the Knuth-Plass paper (linked in the intro) explains the central idea of the algorithm fairly well. Seeing it in the paper was a Eureka moment for me.</p>
+<p><img src="https://blog.ar-ms.me/thoughts/linebreaking/Paragraph%20Graph.png" alt="Paragraph Graph" /></p>
+<p>This is a directed graph from the beginning of the paragraph to the end, where the breakpoint is mandatory. The graph's nodes are the breakpoints. The edges are the lines typeset between said breakpoint. The edge's <em>cost</em>, the little number next to it, is the "ugliness" of the line, as it were: an evenly spaced line as the font designer intended where the distance from the beginning to the end is exactly the given line width, would have zero cost. The cost's formula is easily findable online, adjusted by the last breakpoint's penalty. (For example, a break at a hyphen would give a penalty of, say, -50).</p>
+<p>The example given is fairly simple: the <strong>boxes</strong> are the letters; the <strong>glue</strong> is the spaces; and the <strong>breakpoints</strong> are where the spaces are in addition to any hyphenation opportunities.</p>
+<p>Here are the rough outline of how to build the graph:</p>
+<ol>
+<li>Start from the beginning. This is your root node.</li>
+<li>Identify the first following breakpoint where the line is as loose as possible. (i.e. the glue is as stretched as can be).</li>
+<li>Identify the last following breakpoint where the line is as tight as possible. (i.e. the glue is as squished as can be).</li>
+<li>Add the breakpoints identified in steps 2 and 3, and every breakpoint in between, as children for the node in step 1. The edge cost between the parent node and each child is based on the line formation.</li>
+<li>For each child node, repeat the process.</li>
+<li>After all nodes and edges have been found and calculated, pick the path from the beginning to the end with the least cost. (I think this is called the Dijkstra algorithm? It is in every graph library.)</li>
+</ol>
+<p>Often, the last line, or edge, of the directed graph always has a cost of 0. In physical terms, the last line of the paragraph is not usually justified, so wherever the last word falls is fine and the spaces will be added evenly.</p>
+<p>The penalties attached to breakpoints can change the evaluation of each line's cost. The simplest example is hyphenation. A breakpoint at a hyphen, having a penalty of -50 (or w/e), adds 50 points to the cost. Two hyphens in a row adds, say, 100 to the cost of both hyphens (so it is especially discouraged.) To avoid typographic orphans, the second to last and third to last breakpoints can be assigned arbitrary large penalties. Another idea suggested in the paper is to give a penalty to lines with wildly different densities (so a tight line followed by a loose line). The penalties attached to breakpoints give you a flexible toolbox to decide which typographic "behaviour" to encourage or discourage.</p>
+<p>Note that these numbers for penalties are essentially arbitrary and you should try different values for different things. You can even have the user set them!</p>
+<p>Another thing of note is that sometimes a node can have more than one parent. In fact for the last breakpoint in the paragraph this is mandatory! So when you are building the graph, you might want to check if the child node you found is already recorded, and simply extend a new edge to it.</p>
+<h3 id="pseudocode">Pseudocode</h3>
+<p>Here is some pseudorustcode showcasing the idea (as I am currently learning Rust):</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">use</span><span> made_up_graph_library;
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">line_break </span><span>(input: ShapedText, width: </span><span style="font-weight:bold;color:#a71d5d;">f64</span><span>) -&gt; </span><span style="color:#0086b3;">Vec</span><span>&lt;Line&gt; {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> bps </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> input.</span><span style="color:#62a35c;">breakpoints</span><span>();
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// paragraph start
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> graph </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>Graph::new();
+</span><span>    graph.</span><span style="color:#62a35c;">add_node</span><span>(bps[</span><span style="color:#0086b3;">0</span><span>], AsRoot);
+</span><span>    
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">for</span><span> i </span><span style="font-weight:bold;color:#a71d5d;">in </span><span style="color:#0086b3;">0</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>bps.</span><span style="color:#62a35c;">len</span><span>() {
+</span><span>
+</span><span>        </span><span style="font-style:italic;color:#969896;">// if no node exists for this breakpoint, continue,
+</span><span>        </span><span style="font-style:italic;color:#969896;">// since nodes are created by the inner loop below.
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if !</span><span>graph.</span><span style="color:#62a35c;">contains_node</span><span>(bps[i]) {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span>;
+</span><span>        }
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">for</span><span> j </span><span style="font-weight:bold;color:#a71d5d;">in </span><span>(i </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">1</span><span>)</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>bps.</span><span style="color:#62a35c;">len</span><span>() {
+</span><span>
+</span><span>            </span><span style="font-style:italic;color:#969896;">// a build_line() function that takes 
+</span><span>            </span><span style="font-style:italic;color:#969896;">// ShapedText, indices of start and end,
+</span><span>            </span><span style="font-style:italic;color:#969896;">// and a desired line width, and returns 
+</span><span>            </span><span style="font-style:italic;color:#969896;">// Result&lt;Line, Error&gt;.
+</span><span>            </span><span style="font-style:italic;color:#969896;">//
+</span><span>            </span><span style="font-style:italic;color:#969896;">// Each Line has a cost property.
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> attempt </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">build_line</span><span>(input, i, j, width);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">match</span><span> attempt {
+</span><span>                </span><span style="font-style:italic;color:#969896;">// if line is too loose skip to the next
+</span><span>                </span><span style="font-style:italic;color:#969896;">// iteration of the inner loop
+</span><span>                Error::LineTooLoose </span><span style="font-weight:bold;color:#a71d5d;">=&gt; continue</span><span>;
+</span><span>
+</span><span>                </span><span style="font-style:italic;color:#969896;">// if line is too tight, break the inner loop
+</span><span>                Error::LineTooTight </span><span style="font-weight:bold;color:#a71d5d;">=&gt; break</span><span>;
+</span><span>
+</span><span>                </span><span style="font-style:italic;color:#969896;">// if line is buildable :
+</span><span>                </span><span style="color:#0086b3;">Ok</span><span>(line) </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>                    </span><span style="font-style:italic;color:#969896;">// if the bps[j] node was created in a 
+</span><span>                    </span><span style="font-style:italic;color:#969896;">// previous iteration, update it
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">if</span><span> graph.</span><span style="color:#62a35c;">contains</span><span>(bps[j]) {
+</span><span>                        graph.</span><span style="color:#62a35c;">add_edge</span><span>(parent: bps[i],
+</span><span>                                       child: bps[j], 
+</span><span>                                       edge: line);
+</span><span>                    </span><span style="font-style:italic;color:#969896;">// and if it wasn&#39;t, create it.
+</span><span>                    } </span><span style="font-weight:bold;color:#a71d5d;">else </span><span>{
+</span><span>                        graph.</span><span style="color:#62a35c;">add_node</span><span>(bps[j], 
+</span><span>                                       AsChild(parent: bps[i], 
+</span><span>                                               edge: line));
+</span><span>                    }
+</span><span>                }
+</span><span>            }
+</span><span>        }
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// bunch of imagined methods where the graph library gives me 
+</span><span>    </span><span style="font-style:italic;color:#969896;">// the shortest path from a given start to a given end, then 
+</span><span>    </span><span style="font-style:italic;color:#969896;">// returns a vector of the edges passed.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> output </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> graph.</span><span style="color:#62a35c;">shortest_path</span><span>(from: bps[</span><span style="color:#0086b3;">0</span><span>],
+</span><span>                                     to: bps[bps.</span><span style="color:#62a35c;">len</span><span>() </span><span style="font-weight:bold;color:#a71d5d;">- </span><span style="color:#0086b3;">1</span><span>],
+</span><span>                                     eval: |line| line.cost)
+</span><span>                      .</span><span style="color:#62a35c;">edges</span><span>()
+</span><span>                      .</span><span style="color:#62a35c;">collect</span><span>();
+</span><span>    
+</span><span>    output
+</span><span>}
+</span></code></pre>
+<p>That's it. This is the Knuth-Plass linebreaking algorithm, more or less.</p>
+<h3 id="adjustments">Adjustments</h3>
+<p>Note that now there is no logic to punish two consecutive hyphenations and paragraph lengths and other cost adjustments related to the paragraph as a whole. One could add these adjustments after creating the graph, by traversing the graph and adjusting the cost of any edge between two hyphens, or any sequence of edges with disparate density, and what have you. The sky is the limit.</p>
+<h3 id="real-world-example-typst">Real world example: Typst</h3>
+<p>From the little code examples I have seen, the algorithm is implemented slightly differently. Here is a real world example:</p>
+<p>I have been looking a the line breaking algorithm implemented in Typst. It follows the same basic algorithm we are talking about, but builds the underlying graph differently, but calls it a table rather than a graph, just to confuse non-CS folks. <a href="https://github.com/typst/typst/blob/cc67e5309994eefd1bd1c892f040ec7912052a4b/library/src/layout/par.rs#L819">You can find the description and the code here</a>. From what I understand, it assigns each breakpoint, starting from the first, the cost of setting the paragraph up to itself, but that calculation takes into account the previous breakpoints' recorded score. If you will allow me to refer again to the beautiful graph above, look at the breakpoint "so" in the third line, and what is above it. To simplify the reasoning a bit, let's assume only the breakpoints in the graph are valid, even tho the logic would be the same when you go over every breakpoint.</p>
+<ol>
+<li>Beginning to the first bp "a" has a cost of 2357.</li>
+<li>First bp "a" to second bp "king" has a cost of 2357 (cost of "a") plus whatever the cost of "a" to "king" is. We find that Beginning to second bp "king" has a cost of 1734, which is less than 2357 + x, so we record that "king" has a cost of 1734.</li>
+<li>Third bp "was" goes through the same logic with every previous breakpoint, and the graph artist already found out the lowest cost "was" can have is 2363 (2357 + 6), we record that for "was" noting that we are basing this off of "a".</li>
+<li>Fourth bp "so" , when connecting with "a" has a cost of 4633 (2276 + 2357). When connecting with "king" it is 6426 (4692 + 1734). So we record that for "so" the least value we found was 4633 while connecting through "a".</li>
+<li>etc for each following one.</li>
+</ol>
+<p>By recording the least value each breakpoint has, by the time you reach the last breakpoint, you already have the lowest cost path calculated for you with the lists of breakpoints you should, well, break at. I annotated this logic on the graph above, showing the cost of each breakpoint and highlighting the parent relationship that gave me the lowest cost (when there are multiple parents).. The path from the last breakpoint (at "thing") that gives "thing" the lowest cost is left as an exercise to the reader. To know the cost of each path, add the path's cost to the parent node's cost, and pick the path that gives you the least cost.</p>
+<p><img src="https://blog.ar-ms.me/thoughts/linebreaking/Paragraph%20Graph%20annotated.png" alt="Annotated Graph" /></p>
+<p>I find my version above easier to grok, to be honest. Either way you organize the code, you are building a graph, and then you are traversing it to find the shortest path. The main difference is where the cost is encoded. In my version, the cost is encoded in the edges themselves, where each edge carries its cost. In the Typst version, the cost is encoded on each breakpoint, by finding the smallest cost among parent nodes and their incoming edges.</p>
+<h2 id="what-about-build-line">What about <code>build_line()</code> ?</h2>
+<p>You will have noticed by now that I made no mention of boxes and glue in the code snippet above. This is because, in that model, they are the domain of the <code>build_line()</code> function.</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-style:italic;color:#969896;">// Function signature
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">build_line</span><span>(input: ShapedText,
+</span><span>              start_breakpoint: </span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>,
+</span><span>              end_breakpoint: </span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>,
+</span><span>              desired_linewidth: </span><span style="font-weight:bold;color:#a71d5d;">f64</span><span>) -&gt; </span><span style="color:#0086b3;">Result</span><span>&lt;Line, Error&gt;;
+</span></code></pre>
+<p>How this function should work can be summarised as:</p>
+<ol>
+<li>Take the input processed and shaped text.</li>
+<li>Take a slice out of it. You know have an array (or vector) of glyphs, each has a specific width.</li>
+<li>Mark which glyphs are glue. (i.e. mark the spaces).</li>
+<li>Find the sum of all the boxes' widths. And find the number of the glue characters.</li>
+<li>Calculate the sum of all boxes and glue widths, with the glue at the maximum width per space character. If it is <em>less</em> than the desired width return an <code>Error::LineTooLoose</code>.</li>
+<li>Repeat with the glue at the minimum width per space character. If it <em>more</em> than the desired width return an <code>Error::LineTooTight</code>.</li>
+<li>Now do it with the glue at the ideal (font given) width per space character. <em>This</em> width, and its difference from the given line width (in the function input) is what is used to calculate the line's <code>cost</code>.</li>
+<li>Simple arithmetic should tell what the glue size for this line is.</li>
+</ol>
+<h3 id="pseudocode-1">Pseudocode</h3>
+<p>Here is again the pseudorustcode of our function.</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">build_line</span><span>(input: ShapedText,
+</span><span>              start_bp: </span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>,
+</span><span>              end_bp: </span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>,
+</span><span>              desired_width: </span><span style="font-weight:bold;color:#a71d5d;">f64</span><span>) -&gt; </span><span style="color:#0086b3;">Result</span><span>&lt;Line, Error&gt; {
+</span><span>    
+</span><span>    </span><span style="font-style:italic;color:#969896;">// trims the glue at the beginning and end.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> b_and_g </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> input.</span><span style="color:#62a35c;">slice_betweeen</span><span>(start_bp, end_bp);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> sum_boxes </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b_and_g.</span><span style="color:#62a35c;">filter</span><span>(|g| </span><span style="font-weight:bold;color:#a71d5d;">!</span><span>g.</span><span style="color:#62a35c;">is_whitespace</span><span>())
+</span><span>                           .</span><span style="color:#62a35c;">map</span><span>(|g| g.</span><span style="color:#62a35c;">horizontal_advance</span><span>())
+</span><span>                           .</span><span style="color:#62a35c;">sum</span><span>();
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> count_glue </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b_and_g.</span><span style="color:#62a35c;">filter</span><span>(|g| g.</span><span style="color:#62a35c;">is_whitespace</span><span>())
+</span><span>                            .</span><span style="color:#62a35c;">count</span><span>();
+</span><span>    
+</span><span>    </span><span style="font-style:italic;color:#969896;">// bear with me here
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> pft_space </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> input.</span><span style="color:#62a35c;">ideal_space_width</span><span>();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> min_space </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> input.</span><span style="color:#62a35c;">min_space_width</span><span>();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> max_space </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> input.</span><span style="color:#62a35c;">max_space_width</span><span>();
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if</span><span> sum_boxes </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span>(count_glue </span><span style="font-weight:bold;color:#a71d5d;">*</span><span> max_space) </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span> desired_width {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return </span><span>Error::LineTooLoose;
+</span><span>    }
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if</span><span> sum_boxes </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span>(count_glue </span><span style="font-weight:bold;color:#a71d5d;">*</span><span> min_space) </span><span style="font-weight:bold;color:#a71d5d;">&gt;</span><span> desired_width {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return </span><span>Error::LineTooTight;
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> true_width </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> sum_boxes </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span>(count_glue </span><span style="font-weight:bold;color:#a71d5d;">*</span><span> pft_space);
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// someone doublecheck this next line please
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> actual_space_width </span><span style="font-weight:bold;color:#a71d5d;">=
+</span><span>        (desired_width </span><span style="font-weight:bold;color:#a71d5d;">-</span><span> true_width)</span><span style="font-weight:bold;color:#a71d5d;">/</span><span>count_glue </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> pft_space;
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// raw cost, before changes for hyphenation and the like
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> line_cost </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>Math::square(desired_width </span><span style="font-weight:bold;color:#a71d5d;">-</span><span> true_width);
+</span><span>    
+</span><span>    </span><span style="font-style:italic;color:#969896;">//...
+</span><span>    </span><span style="font-style:italic;color:#969896;">// Here is where you place a bunch of code laying out the
+</span><span>    </span><span style="font-style:italic;color:#969896;">// glyphs (sorry boxes) into a Line object, with the 
+</span><span>    </span><span style="font-style:italic;color:#969896;">// actual_space_width you found, and return it!
+</span><span>    </span><span style="font-style:italic;color:#969896;">//...
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return </span><span style="color:#0086b3;">Ok</span><span>(final_line);
+</span><span>}
+</span></code></pre>
+<p>I hope you enjoyed this read and that you found it educational. In the next post I will write how the <code>build_line()</code> function can be adapted for non-Latin scripts (namely Arabic because that's all I know).</p>
+<p><em>Edit on 12-Apr-2023: <a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/">Here is Part 2</a></em></p>
+</main>
+
+			
+			
+				<footer>
+					<small>
+						
+							<a class="mylink" href="mailto:a.sibahi@gmail.com" rel="me">Mail</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;x.com&#x2F;@asibahi" rel="me">Twitter</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;typo.social&#x2F;@asibahi" rel="me">typo.social</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;sr.ht&#x2F;~asibahi&#x2F;" rel="me">SourceHut</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;github.com&#x2F;asibahi" rel="me">GitHub</a>
+						
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;about&#x2F;">Cat</a>
+						
+					</small>
+				</footer>
+			
+		</div>
+	</body>
+</html>

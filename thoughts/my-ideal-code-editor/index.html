@@ -1,0 +1,111 @@
+<!doctype html>
+<html  dir="ltr" >
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Musings"
+		/>
+		<title>Abdul Rahman Sibahi | My Ideal Code Editor</title>
+		<link rel="stylesheet" href="https://blog.ar-ms.me/style.css?h=5e9f4e540307a223aec7" />
+	</head>
+
+	<body>
+
+		This website has moved to <a href="http://blog.ar-ms.me/">blog.ar-ms.me</a>. No further content will be published on the  <a href="https://www.un.org/unispal/document/a-hrc-59-23-from-economy-of-occupation-to-economy-of-genocide-report-special-rapporteur-francesca-albanese-palestine-2025/">Github</a> hosted version.
+
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			
+	<header class="space">
+		<a href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;"> ⏏️ </a>
+
+		
+			<h1>My Ideal Code Editor</h1>
+			
+
+			<nav>
+				
+					<p class="secondary">2024-09-24</p>
+				 
+			</nav>
+		
+	</header>
+
+			
+			
+	<main><p>I have been doing some thinking about what my ideal code editor should be. I currently use VSCode, both to edit this site and to play around with code. However, VSCode is actually too powerful for my needs. And it lacks one crucial feature (that's pretty much lacking from almost every text/code editor outside of TextEdit and Notepad): proper Arabic language and Right-to-Left (RTL) support.<sup class="footnote-reference" id="fr-rtl-1"><a href="#fn-rtl">1</a></sup></p>
+<p>I tried several editors (honestly none more than 5 minutes) and I always go back to VSCode because of how comfortable it is. I tried <a href="https://helix-editor.com">Helix</a>, but could not live in the Terminal or modal editing. Tried Zed .. and it honestly just felt weird. Looked at <a href="https://www.codeedit.app">CodeEdit</a>, which is a really interesting project that brings the Xcode aesthetic down to code editor level, but it is still a work in progress, and it still doesn't deal with RTL properly.<sup class="footnote-reference" id="fr-cot-1"><a href="#fn-cot">2</a></sup></p>
+<p>This post is more for my own records than anything. Whenever I start on the great My Ideal Code Editor (Code name: MICE, or KTB, or whatever), I have a nice feature list to stick to.</p>
+<h2 id="has-not">Has Not</h2>
+<p>MICE lacks the following features:</p>
+<ul>
+<li>An integrated Terminal. My usual terminal works just fine.</li>
+<li>An integrated Git GUI. I can learn a few Git commands on the terminal.</li>
+<li>An integrated remote connection. I am a hobbyist who works solo.</li>
+<li>Built-in support for any language. Focus merely on the text features.</li>
+<li>Any sort of preview or built-in compiler. With a possible concession to Markdown. (I really like VSCode's Markdown preview pane)</li>
+</ul>
+<h2 id="has">Has</h2>
+<p>However, MICE has these nice features:</p>
+<h3 id="high-level-features">High Level Features:</h3>
+<ul>
+<li>Native UI. I am on a Mac. I would like a native Mac UI.</li>
+<li>Arabic text support. If I have an Arabic paragraph inside of an English document, I would like said paragraph to be right-aligned.</li>
+<li>Tabs. Directory pane.</li>
+<li>A command line tool to open directories, like VSCode's <code>code .</code> command. No idea currently on what else it needs to do.</li>
+<li>Rely on the the system's spell check in <code>txt</code> and <code>md</code> files.</li>
+</ul>
+<h3 id="coding-features">Coding Features</h3>
+<ul>
+<li>LSP support: To provide IDE capabilities for any language. Intellisense, Go To Definition, Rename Symbol, Inlay Hints, the works.</li>
+<li>Tree-Sitter support: Syntax Highlighting (with perhaps LSP fallback), Multi-Cursor stuff, Code folding, Indentation. (Maybe through WASM plugins)</li>
+<li>Syntax Highlighting can have <a href="https://monaspace.githubnext.com">multiple typefaces in it</a>.</li>
+<li>Smart editor features like auto-closing parentheses and select-and-type-a-brace-to-surround-block.</li>
+<li>While no language support is Built-In, the default installation should come with the web's defaults: HTML, CSS, JavaScript, and some useful additions like Sass, Markdown, and some Templating language like <a href="https://keats.github.io/tera/">Tera</a>, the one used for this site.</li>
+<li>Easy to install "packages" for additional languages.</li>
+</ul>
+<p>What else? I don't know. I might add to this page once I think of anything or start any project.</p>
+<footer class="footnotes">
+<ol class="footnotes-list">
+<li id="fn-rtl">
+<p>There are <em>Markdown</em> editors that support Arabic decently enough, such as <a href="https://bear.app">Bear</a> and Obsidian. But those do not handle HTML and Sass and what goes into editing a website, even ones as simple as this. <a href="#fr-rtl-1">↩</a></p>
+</li>
+<li id="fn-cot">
+<p>2024-09-26: I also came across <a href="https://coteditor.com">CotEditor</a>. Looks nice and has good CJK support, with vertical text. <a href="#fr-cot-1">↩</a></p>
+</li>
+</ol>
+</footer>
+</main>
+
+			
+			
+				<footer>
+					<small>
+						
+							<a class="mylink" href="mailto:a.sibahi@gmail.com" rel="me">Mail</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;x.com&#x2F;@asibahi" rel="me">Twitter</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;typo.social&#x2F;@asibahi" rel="me">typo.social</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;sr.ht&#x2F;~asibahi&#x2F;" rel="me">SourceHut</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;github.com&#x2F;asibahi" rel="me">GitHub</a>
+						
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;about&#x2F;">Cat</a>
+						
+					</small>
+				</footer>
+			
+		</div>
+	</body>
+</html>

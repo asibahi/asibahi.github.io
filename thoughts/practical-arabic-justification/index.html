@@ -1,0 +1,361 @@
+<!doctype html>
+<html  dir="ltr" >
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Musings"
+		/>
+		<title>Abdul Rahman Sibahi | Thoughts on Arabic Justification</title>
+		<link rel="stylesheet" href="https://blog.ar-ms.me/style.css?h=5e9f4e540307a223aec7" />
+	</head>
+
+	<body>
+
+		This website has moved to <a href="http://blog.ar-ms.me/">blog.ar-ms.me</a>. No further content will be published on the  <a href="https://www.un.org/unispal/document/a-hrc-59-23-from-economy-of-occupation-to-economy-of-genocide-report-special-rapporteur-francesca-albanese-palestine-2025/">Github</a> hosted version.
+
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			
+	<header class="space">
+		<a href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;"> ⏏️ </a>
+
+		
+			<h1>Thoughts on Arabic Justification</h1>
+			
+
+			<nav>
+				
+					<p class="secondary">2023-04-12</p>
+				 
+				<details class="secondary">
+					<summary> Contents </summary>
+					<ul>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/#background-reading">Background Reading</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/#intro">Intro</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/#arabic-hyphenation">Arabic Hyphenation?</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/#kashidas">Kashidas</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/#opentype-features">OpenType Features</a>
+							
+							<ul>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/#using-jalts-in-a-practical-manner">Using jalts in a practical manner</a>
+								</li>
+								
+							</ul>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/#variable-fonts">Variable Fonts</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/#spacing-clusters">Spacing Clusters</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/#priority-list">Priority list</a>
+							
+						</li>
+						
+					</ul>
+				</details>
+				
+			</nav>
+		
+	</header>
+
+			
+			
+	<main><p>For the tl;dr, skip to <a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/#priority-list">Priority</a>. This article is a follow up to <a href="https://blog.ar-ms.me/thoughts/linebreaking/">this one</a>.</p>
+<h2 id="background-reading">Background Reading</h2>
+<p>Here are some links that you might want to look at:</p>
+<ul>
+<li><a href="https://www.youtube.com/watch?v=Ai4dgLpFMx8">Deficiencies of Handling Arabic Script in OpenType. Aida Sakkal and Mamoun Sakkal. Tech Talks 2021</a>. Mamoun Sakkal is a rather well known Arabic type designer. The video goes over the practical problems of justification in detail.</li>
+<li><a href="https://research.reading.ac.uk/typoarabic/on-arabic-justification-part-2-software-implementations/">On Arabic justitifcation part 2 by Titus Nemeth</a>. (Look at parts 1 and 3 as well).</li>
+<li><a href="https://digitalkhatt.org/about">About Digital Khatt.</a> Real world (as it gets) examples of some of the ideas of Arabic justification. This is a public github project you can find <a href="https://github.com/DigitalKhatt">here</a>.</li>
+<li><a href="https://typedrawers.com/discussion/3465/making-jstf-better">Making JSTF better by Simon Cozens on TypeDrawers</a></li>
+<li><a href="https://github.com/harfbuzz/harfbuzz/discussions/3252">Discussion at HarfBuzz Github - Support for jalt feature and target length</a> I will save you a click: "HarfBuzz currently does not implement justification, because it's a hard problem, and is under-specified in OpenType." Here is a <a href="https://github.com/harfbuzz/harfbuzz/pull/3259">follow up discussion: API for buffer target length</a> Useful context by all parties.</li>
+<li>More general and high level: <a href="https://www.w3.org/International/articles/typography/linebreak.en">Approaches to Line Breaking, W3C</a> and <a href="https://www.w3.org/International/articles/typography/justification">Approaches to full justification</a>.</li>
+</ul>
+<h2 id="intro">Intro</h2>
+<p>Justification is a nasty and difficult problem. When justifying over sufficiently long lines, the <a href="https://blog.ar-ms.me/thoughts/linebreaking/">Knuth-Plass algorithm</a> is more than enough. However, when the lines are narrow, for example in a newspaper column, there just are not enough words in a line to make small changes to the space between them unnoticeable, and you need to take more drastic measures.</p>
+<p>For English, and Latin (and Cyrillic?) script-based languages in general, the usual solution is <a href="https://en.wikipedia.org/wiki/Hyphen#Justification_and_line-wrapping">hyphenation</a>. This does not apply to every script. For example, the Japanese script have their own <a href="https://www.w3.org/TR/jlreq/?lang=en">justification algorithm</a> that does not "just" add spaces between characters. Other scripts have their own rules going on.</p>
+<h2 id="arabic-hyphenation">Arabic Hyphenation?</h2>
+<p>In Arabic, they <em>used to</em> hyphenate words around 1400 years ago. They, sadly, no longer do that, as it would make things so much simpler. In the following image, you can see the letter ا at the end (left) of the first line, and the word fragment لله at the start (right) of the second. And again at the end of the second and start of third. (Consecutive hyphenated lines - oh no). The break is not across syllabic boundaries, as an English speaker would expect, but between connected clusters.</p>
+<p><img src="https://blog.ar-ms.me/thoughts/practical-arabic-justification/IMG_1070.jpg" alt="A page from the Quran" /></p>
+<p>If you know anything about the Arabic script, you know two things: 1. It is written from right to left, and 2. in words, the letters are connected, but not all of them! (Letters are almost never connected <em>across</em> words.) So for example in the word ديمقراطية, meaning Democracy, well it is one word, but there are four "clusters". Like I said, we do not "hyphenate" (I am using the term loosely here as there are no actual hyphens) between those any more, but it is an important concept to keep in mind.</p>
+<p>Which brings us back to the original problem statemnt: if the line width is so small that merely adjusting the spaces between words would be unseemly, what do you do? I am going to abuse my version of Microsoft Word a bit for this post. Here is an image of line of poetry justified using space stretching only. (Considering it is poetry, breaking words across lines is not even an option).</p>
+<p><img src="https://blog.ar-ms.me/thoughts/practical-arabic-justification/just-calibri-spaces.png" alt="Space Justification" /></p>
+<p>The lines are by <a href="https://en.wikipedia.org/wiki/Ahmed_Shawqi">Ahmed Shawqi</a>:</p>
+<par dir = "rtl">
+<p>صوني جمالك عنا إننا بشر<br />
+خلق التراب وهذا الحسن روحاني<br />
+أو فابتغي فلكا تأوينه ملكا<br />
+لم يتخذ شركا في العالم الفاني.</p>
+</par>
+<p>I have a few unhinged ideas. But let's talk about the usual approach first.</p>
+<h2 id="kashidas">Kashidas</h2>
+<p>If you have watched Mamoun Sakkal's video. linked above, on the technical limitations of OpenType when it comes to Arabic script, you would have noticed he spends a lot of the video talking about "Tatweel", or what is sometimes called by its Persian name, Kashida.</p>
+<p><a href="https://www.compart.com/en/unicode/U+0640">Kashida is a character on all Arabic keyboards</a>. It does not have a meaning, by itself or by others, and it is merely decorartive. It is a typographinc (typesetting?) trick, that takes advantage of Arabic's connected nature. For an Arabic reader (and this applies to literally every language that uses the Arabic script), there is literally no difference between جمل and جـــــــمـــــــــل. The second one simply looks longer. You can probably see where this is going.</p>
+<p>The kashidas method basically inserts these characters betwen the individual letters of clusters.</p>
+<p><img src="https://blog.ar-ms.me/thoughts/practical-arabic-justification/just-calibri-kashida.png" alt="Kashida Justification" /></p>
+<p>The main problem with this is that it is <em>dumb</em>. So dumb it is useless. You can see how it adds some kashidas after بشر on the first line. (Reminder: "after" means on the left.) This can be fixed, and this is probably a MS Word problem, but the other problem is a bit more subtle, and it is not clear with Calibri (as it was probably designed with this behavior in mind). Let us try with a different font by the same designer, Sakkal Majalla.</p>
+<p><img src="https://blog.ar-ms.me/thoughts/practical-arabic-justification/just-majalla-kashida.png" alt="Kashida Justification" /></p>
+<p>You can see it in the second line, in the words التراب and الحسن, and in the third line in فابتغي, a bit more subtly. The font uses (and abuses) an OpenType feature called Contextual Alternates, which basically means some letters look different when followed by specific letters, and it is all over the place in every half-decent Arabic font online.</p>
+<p>The software, for whatever reason, <em>does not</em> call the shaper (HarfBuzz and the like) again after inserting the kashidas, and in fonts that use cursive shaping and do not sit on the baseline, you end up with this: (Noto Nastaliq Urdu)</p>
+<p><img src="https://blog.ar-ms.me/thoughts/practical-arabic-justification/just-noto-kashida.png" alt="Kashida &quot;Justification&quot;" /></p>
+<p>This is not a display typeface being misused by the way. It is meant for texts. If you want to see more dramatic failures, try the fonts <a href="https://gulzarfont.org">Gulzar</a> and <a href="https://fonts.google.com/specimen/Aref+Ruqaa?query=aref">Aref Ruqaa</a> and set Word's justification setting to "Justify Low". This is <strong>not</strong> a failure of the fonts. This is a failure of the justification engine.</p>
+<p>The way type designers protect their fonts from this fate is by making the Kashida unicode character be 0-width (aka does nothing). The font <a href="https://fonts.ilovetypography.com/fonts/sakkal-design/sakkal-kitab">Sakkal Kitab</a> (which costs $120 I do not have), does not even permit you to put Kashidas manually between any two letters. Only in specific places, and only manually (or by use of stylistic sets). You can try it yourself on the webpage by copying parts of the poem above and inserting the kashida in random places.</p>
+<p>Note that I am not saying that inserting Kashidas should never ever happen. I am saying it should never happen naively, and the engine must reshape the text after inserting Kashidas, or it will fail in spectacular ways seen above.</p>
+<p>If you still want to insert Kashidas, the algorithm is simple enough: inser the kashidas before the letters with the <code>fina</code> shape, or before the <code>medi</code> shape. Complications would perhaps arise from trying to find out which glyphs, or HarfBuzz clusters, are final or medial (and a simple look up dictionary would not do if you want to support more than the Araic language. There are other scripts that connect too, btw: Ad'lam, N'ku, Syriac to name a couple).</p>
+<p>The <a href="https://d3qx8f8l5aa3yc.cloudfront.net/images/sakkal_kitab_features.pdf">Sakkal Kitab PDF Specimen</a> is a very nice brief read regarding justification.</p>
+<p>Speaking of which:</p>
+<h2 id="opentype-features">OpenType Features</h2>
+<p>OpenType has a feature <em>specifically</em> for justification. It is not very well supported, and in fact in mainstream software only InDesign makes use of it. It is called Justification Alternates, or <code>jalt</code> for short.<code>jalt</code>s, in theory, can make the word longer <em>or</em> shorter, tho I have not come across examples that make them shorter. I do not have InDesign, but Sakkal Majalla helpfully has a stylistic set that does what <code>jalt</code> does. This how the font looks normally:</p>
+<p><img src="https://blog.ar-ms.me/thoughts/practical-arabic-justification/just-majalla-spaces.png" alt="Space Justification" /></p>
+<p>This is how it looks with Stylistic Set 3 (or for this exercise, <code>jalt</code>s):</p>
+<p><img src="https://blog.ar-ms.me/thoughts/practical-arabic-justification/just-majalla-jalt.png" alt="jalt Justification" /></p>
+<p>You might reasonably point out that this does not solve the problem, and the text still has a lot of ugly spaces between the words. You would be forgetting an important fact here: I am intentionally abusing the software by forcing fully justified short lines. Poetry is a legit use case for justification, but it is an extreme case nonetheless. You can see a more real world example in Sakkal Kitab's Specimen, linked above. Here is a handy screenshot for you:</p>
+<p><img src="https://blog.ar-ms.me/thoughts/practical-arabic-justification/sakkal-kitab-specimen.png" alt="jalt Justification" /></p>
+<p>The real issue with <code>jalt</code> and font-driven justification, if you would call it that, is that apparently it is very underspecified, and the support, if it exists at all, is inconsistent.</p>
+<p>You can see in the previous screenshot how in the paragraph with <code>jalt</code>, InDesign turns it on for <em>every word</em>, and not only when needed. This, honestly, defeats the purpose. The text looks way too loose. The manual justification sample, on the right, is more measured when using the justification alternates. (Although because InDesign does not actually let you access <code>jalt</code> directly, it uses stylistic sets instead.) The following page is perhaps more illustrative (the middle and right columns are identical by the way):</p>
+<p><img src="https://blog.ar-ms.me/thoughts/practical-arabic-justification/sakkal-kitab-specimen2.png" alt="jalt Justification" /></p>
+<p>You can see here that the justification alternate, while not used <em>sparingly</em>, they are only used when the spaces would otherwise be too loose. You might also notice that the typesetter (who I can only assume is Sakkal himself) never applied it for two consecutive words, and never more than two times in a line. The choice of <em>which</em> words to stretch is probably arbitrary, based on personal taste.</p>
+<p>I believe this process can reasonably be automated.</p>
+<h3 id="using-jalts-in-a-practical-manner">Using <code>jalt</code>s in a practical manner</h3>
+<p>First of all you need whether the font has <code>jalt</code>s or not. You could even ask the user if they would like to use any other font features for justification purposes, and if they'd have a priority.</p>
+<p>For example, if the user specifies using <code>ss16</code>, <code>ss17</code>, <code>ss18</code>, <code>ss19</code>, and <code>ss20</code> for justification, in this order, use those. If they don't, use <code>jalt</code> if available.</p>
+<p>Pseuorustcode time! I will be adjusting on the <code>build_line()</code> function from the <a href="https://blog.ar-ms.me/thoughts/linebreaking/">linebreaking</a> article.</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">build_line</span><span>(input: ShapedText,
+</span><span>              start_bp: </span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>,
+</span><span>              end_bp: </span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>,
+</span><span>              desired_width: </span><span style="font-weight:bold;color:#a71d5d;">f64</span><span>) -&gt; </span><span style="color:#0086b3;">Result</span><span>&lt;Line, Error&gt; {
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// same as before
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> b_and_g </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> input.</span><span style="color:#62a35c;">slice_betweeen</span><span>(start_bp, end_bp);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> sum_boxes </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b_and_g.</span><span style="color:#62a35c;">filter</span><span>(|g| </span><span style="font-weight:bold;color:#a71d5d;">!</span><span>g.</span><span style="color:#62a35c;">is_whitespace</span><span>())
+</span><span>                           .</span><span style="color:#62a35c;">map</span><span>(|g| g.</span><span style="color:#62a35c;">horizontal_advance</span><span>())
+</span><span>                           .</span><span style="color:#62a35c;">sum</span><span>();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> count_glue </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b_and_g.</span><span style="color:#62a35c;">filter</span><span>(|g| g.</span><span style="color:#62a35c;">is_whitespace</span><span>())
+</span><span>                            .</span><span style="color:#62a35c;">count</span><span>();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> pft_space </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> input.</span><span style="color:#62a35c;">ideal_space_width</span><span>();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> min_space </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> input.</span><span style="color:#62a35c;">min_space_width</span><span>();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> max_space </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> input.</span><span style="color:#62a35c;">max_space_width</span><span>();
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// The math for errors being saved here for later
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> stretched_base </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> sum_boxes </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span>(count_glue </span><span style="font-weight:bold;color:#a71d5d;">*</span><span> max_space);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> cmprsd_bse </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> sum_boxes </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span>(count_glue </span><span style="font-weight:bold;color:#a71d5d;">*</span><span> min_space);
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// this didn&#39;t change either, assuming all jalts increase width
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if</span><span> cmprsd_bse </span><span style="font-weight:bold;color:#a71d5d;">&gt;</span><span> desired_width {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return </span><span>Error::LineTooTight;
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// new stuff !!
+</span><span>    </span><span style="font-style:italic;color:#969896;">// first we need to split the input into words. Each &quot;word&quot;
+</span><span>    </span><span style="font-style:italic;color:#969896;">// is a tuple of the breakpoints before and after. This is
+</span><span>    </span><span style="font-style:italic;color:#969896;">// probably too naive but let&#39;s go with it.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> word_list </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>(start_bp</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>end_bp).</span><span style="color:#62a35c;">map</span><span>(|i| (i, i </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">1</span><span>));
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// Now some insanity: we need to shuffle the words. The reason
+</span><span>    </span><span style="font-style:italic;color:#969896;">// for that is we do not want to apply jalt to two consecutive
+</span><span>    </span><span style="font-style:italic;color:#969896;">// words: it is ugly. Now only our code looks ugly.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> word_list </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> word_list
+</span><span>        .</span><span style="color:#62a35c;">clone</span><span>()
+</span><span>        .</span><span style="color:#62a35c;">step_by</span><span>(</span><span style="color:#0086b3;">3</span><span>)
+</span><span>        .</span><span style="color:#62a35c;">chain</span><span>(word_list.</span><span style="color:#62a35c;">clone</span><span>().</span><span style="color:#62a35c;">skip</span><span>(</span><span style="color:#0086b3;">1</span><span>).</span><span style="color:#62a35c;">step_by</span><span>(</span><span style="color:#0086b3;">3</span><span>))
+</span><span>        .</span><span style="color:#62a35c;">chain</span><span>(word_list.</span><span style="color:#62a35c;">clone</span><span>().</span><span style="color:#62a35c;">skip</span><span>(</span><span style="color:#0086b3;">2</span><span>).</span><span style="color:#62a35c;">step_by</span><span>(</span><span style="color:#0086b3;">3</span><span>))
+</span><span>        .</span><span style="color:#62a35c;">rev</span><span>(); 
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// We assume our ShapedText type has a &quot;reshape_with&quot; method
+</span><span>    </span><span style="font-style:italic;color:#969896;">// This method takes the ShapedInput slice we have, well, 
+</span><span>    </span><span style="font-style:italic;color:#969896;">// reshapes it, and gives it the result.
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// Cool Rust feature: Labeled Blocks
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> words_to_change: </span><span style="color:#0086b3;">Vec</span><span>&lt;(</span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>, </span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>)&gt; </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>&#39;outer: {
+</span><span>
+</span><span>        </span><span style="font-style:italic;color:#969896;">// First we try changing one word
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(word_start, word_end) </span><span style="font-weight:bold;color:#a71d5d;">in</span><span> word_list {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> word </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> input.</span><span style="color:#62a35c;">slice_betweeen</span><span>(word_start, word_end);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> reshaped </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> word.</span><span style="color:#62a35c;">reshape_with</span><span>(</span><span style="color:#183691;">&quot;jalt&quot;</span><span>);
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> delta </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> reshaped.</span><span style="color:#62a35c;">width</span><span>() </span><span style="font-weight:bold;color:#a71d5d;">-</span><span> word.</span><span style="color:#62a35c;">width</span><span>();
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">if</span><span> delta </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> stretched_base </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span> desired_width {
+</span><span>                </span><span style="font-style:italic;color:#969896;">// instead of returning with error
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span>;
+</span><span>            } </span><span style="font-weight:bold;color:#a71d5d;">else if</span><span> delta </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> cmprsd_bse </span><span style="font-weight:bold;color:#a71d5d;">&gt;</span><span> desired_width {
+</span><span>                </span><span style="font-style:italic;color:#969896;">// what if the jalts are _too_ long?
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span>;
+</span><span>            } </span><span style="font-weight:bold;color:#a71d5d;">else </span><span>{
+</span><span>                </span><span style="font-style:italic;color:#969896;">// assign the found word
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">break &#39;outer </span><span>vec![(word_start, word_end)];
+</span><span>            }
+</span><span>       }
+</span><span>
+</span><span>       </span><span style="font-style:italic;color:#969896;">// Then we try changing two words
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(fst_start, fst_end) </span><span style="font-weight:bold;color:#a71d5d;">in</span><span> word_list {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(snd_start, snd_end) </span><span style="font-weight:bold;color:#a71d5d;">in</span><span> word_list {
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">if</span><span> fst_start </span><span style="font-weight:bold;color:#a71d5d;">==</span><span> snd_start { </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span>; }
+</span><span>
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> fst_word </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> input.</span><span style="color:#62a35c;">slice_betweeen</span><span>(fst_start, fst_end);
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> fst_reshaped </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> fst_word.</span><span style="color:#62a35c;">reshape_with</span><span>(</span><span style="color:#183691;">&quot;jalt&quot;</span><span>);
+</span><span>
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> snd_word </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> input.</span><span style="color:#62a35c;">slice_betweeen</span><span>(snd_start, snd_end);
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> snd_reshaped </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> snd_word.</span><span style="color:#62a35c;">reshape_with</span><span>(</span><span style="color:#183691;">&quot;jalt&quot;</span><span>);
+</span><span>
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> delta </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> fst_reshaped.</span><span style="color:#62a35c;">width</span><span>() </span><span style="font-weight:bold;color:#a71d5d;">-</span><span> fst_word.</span><span style="color:#62a35c;">width</span><span>()
+</span><span>                            </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> snd_reshaped.</span><span style="color:#62a35c;">width</span><span>() </span><span style="font-weight:bold;color:#a71d5d;">-</span><span> snd_word.</span><span style="color:#62a35c;">width</span><span>();
+</span><span>
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(delta </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> stretched_base </span><span style="font-weight:bold;color:#a71d5d;">&lt;</span><span> desired_width) 
+</span><span>                   </span><span style="font-weight:bold;color:#a71d5d;">|| </span><span>(delta </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> cmprsd_bse </span><span style="font-weight:bold;color:#a71d5d;">&gt;</span><span> desired_width) {
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span>; 
+</span><span>                } </span><span style="font-weight:bold;color:#a71d5d;">else </span><span>{
+</span><span>                    </span><span style="font-style:italic;color:#969896;">// assign the found words
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">break &#39;outer </span><span>vec![(fst_start, fst_end), (snd_start, snd_end)];
+</span><span>                }
+</span><span>            }
+</span><span>        }
+</span><span>
+</span><span>        </span><span style="font-style:italic;color:#969896;">// Then we try 3 .. this can probably be written to be better
+</span><span>
+</span><span>        </span><span style="font-style:italic;color:#969896;">// NOW we return with Error. This exits the build_line() function
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return </span><span>Error::LineTooLoose;
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// Sort our words to change based on their order.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> words_to_change </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> words_to_change.</span><span style="color:#62a35c;">sort_by_key</span><span>(|(x,_)| x);
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// now we rebuild our boxes list with our new found vector,
+</span><span>    </span><span style="font-style:italic;color:#969896;">// and also shadow (redefine) the variables b_and_g and 
+</span><span>    </span><span style="font-style:italic;color:#969896;">// sum_boxes, from the start of the build_line() function.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let mut</span><span> idx </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">0</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let mut</span><span> segments: </span><span style="color:#0086b3;">Vec</span><span>&lt;(</span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>, </span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>, </span><span style="font-weight:bold;color:#a71d5d;">bool</span><span>)&gt; </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">Vec</span><span>::new();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(s, e) </span><span style="font-weight:bold;color:#a71d5d;">in</span><span> words_to_change {
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if</span><span> s </span><span style="font-weight:bold;color:#a71d5d;">!=</span><span> idx {
+</span><span>            segments.</span><span style="color:#62a35c;">push</span><span>((idx, s, </span><span style="color:#0086b3;">false</span><span>));
+</span><span>            segments.</span><span style="color:#62a35c;">push</span><span>((s, e, </span><span style="color:#0086b3;">true</span><span>));
+</span><span>        } </span><span style="font-weight:bold;color:#a71d5d;">else </span><span>{
+</span><span>            segments.</span><span style="color:#62a35c;">push</span><span>((idx, e, </span><span style="color:#0086b3;">true</span><span>));
+</span><span>        }
+</span><span>        idx </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> e;
+</span><span>    }
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if</span><span> idx </span><span style="font-weight:bold;color:#a71d5d;">!=</span><span> end_bp {
+</span><span>        segments.</span><span style="color:#62a35c;">push</span><span>((idx, end_bp, </span><span style="color:#0086b3;">false</span><span>));
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> b_and_g </span><span style="font-weight:bold;color:#a71d5d;">= 
+</span><span>        segments.</span><span style="color:#62a35c;">map</span><span>(|(s, e, c)| {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">if</span><span> c {
+</span><span>                input.</span><span style="color:#62a35c;">slice_betweeen</span><span>(s, e).</span><span style="color:#62a35c;">reshape_with</span><span>(</span><span style="color:#183691;">&quot;jalt&quot;</span><span>)
+</span><span>            } </span><span style="font-weight:bold;color:#a71d5d;">else </span><span>{
+</span><span>                input.</span><span style="color:#62a35c;">slice_betweeen</span><span>(s, e)
+</span><span>            }
+</span><span>        }).</span><span style="color:#62a35c;">reduce</span><span>(|a, b| a </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> b); </span><span style="font-style:italic;color:#969896;">// concatenating the whole thing
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> sum_boxes </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b_and_g.</span><span style="color:#62a35c;">filter</span><span>(|g| </span><span style="font-weight:bold;color:#a71d5d;">!</span><span>g.</span><span style="color:#62a35c;">is_whitespace</span><span>())
+</span><span>                           .</span><span style="color:#62a35c;">map</span><span>(|g| g.</span><span style="color:#62a35c;">horizontal_advance</span><span>())
+</span><span>                           .</span><span style="color:#62a35c;">sum</span><span>();
+</span><span>    
+</span><span>    </span><span style="font-style:italic;color:#969896;">// Rest is the same. perhaps add a penalty if you get to 3 jalts
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> true_width </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> sum_boxes </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span>(count_glue </span><span style="font-weight:bold;color:#a71d5d;">*</span><span> pft_space);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> actual_space_width </span><span style="font-weight:bold;color:#a71d5d;">=
+</span><span>        (desired_width </span><span style="font-weight:bold;color:#a71d5d;">-</span><span> true_width)</span><span style="font-weight:bold;color:#a71d5d;">/</span><span>count_glue </span><span style="font-weight:bold;color:#a71d5d;">+</span><span> pft_space;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">let</span><span> line_cost </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>Math::square(desired_width </span><span style="font-weight:bold;color:#a71d5d;">-</span><span> true_width);
+</span><span>    
+</span><span>    </span><span style="font-style:italic;color:#969896;">//...
+</span><span>    </span><span style="font-style:italic;color:#969896;">// Here is where you place a bunch of code laying out the
+</span><span>    </span><span style="font-style:italic;color:#969896;">// glyphs (sorry boxes) into a Line object, with the 
+</span><span>    </span><span style="font-style:italic;color:#969896;">// actual_space_width you found, and return it!
+</span><span>    </span><span style="font-style:italic;color:#969896;">//...
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return </span><span style="color:#0086b3;">Ok</span><span>(final_line);
+</span><span>}
+</span><span>
+</span></code></pre>
+<p>phew! This took me a few days to express properly, and I hope the intent is clear. I am sure if you actually implement this in a code base a lot of bugs will come up, nut hey!</p>
+<p>This code could be even expanded to take a bunch of OpenType features ( evne specified by the user) and apply them in order of priority. Let's keep this as an exercise for the reader.</p>
+<h2 id="variable-fonts">Variable Fonts</h2>
+<p>This is probably the best solution. Sadly, it is not (yet?) common in most fonts. Definitely not the ones shipping by default in operating systems.</p>
+<p>For the uninitiated, <a href="https://fonts.google.com/knowledge/introducing_type/introducing_variable_fonts">here is a useful Google Fonts primer on what variable fonts are and how they work</a>. <a href="https://medium.com/variable-fonts/https-medium-com-tiro-introducing-opentype-variable-fonts-12ba6cd2369">This is an article by John Hudson of Tiro Typeworks</a>. The most useful part of Variable Fonts, imo, is that font designers are free to implement any variable axis they want. The spec has five axis with a .. well .. specified behaviour, but designers are not restricted by them. The five registered axis are Weight <code>wght</code>, Width <code>wdth</code>, Optical size <code>opsz</code>, Italic <code>ital</code>, and Slant <code>slnt</code>. But how about <a href="https://codepen.io/mandymichael/pen/pxXNbr">Temprature</a>? <a href="https://www.29lt.com/product/29lt-okaso/">Stretch</a>? <a href="https://www.type-together.com/belarius-font">Serif</a>? <a href="https://v-fonts.com/tags/C5">The possibilities are practically endless</a>.</p>
+<p>For justification, one can either use the Width axis (as <a href="hhttps://sites.google.com/view/sultanfonts/naskh-font/plain">Sultan al-Maqtari does with his font Sultan Plain</a>), or use what is called a <code>GEXT</code>, a Glyph Extension axis. This <a href="https://simoncozens.github.io/more-on-newbreak/">article by Simon Cozens</a> has an example for an Armenian font. The simple idea is that you break the lines with a greedy algorithm (what Knuth calls first-fit), and then simply .. increase the width, or the glyph extension, of your lines to fit in the desired space.</p>
+<p>This gives back autonomy to the font designer: the line stretchs the way they see fit. It is simpler to program for software makers than the hodgepodge of selecting <code>jalt</code>s above. The spaces are all at the ideal space. The text all looks neat. <a href="https://github.com/jmsole/gext-demos">Here are a few demos of how this might look in practice</a>. There are no downsides!!</p>
+<p>Well the main downside is that it is not widely available, and there is no generally agreed on axis for justification use. (That last point is why Cozens is suggesting the <code>GEXT</code> axis.) The other (minor) downside is is that the axis are <em>not</em> guaranteed to be evenly distributed. If you measure the line's width at axis point 0, and measure it again at axis point 100, there is zero guarantee that the line width at axis point 50 would be their average. Also it is all a bit wonky in browsers. But who cares about browsers?</p>
+<p>From a naive point of view, the typestter should do the following:</p>
+<ol>
+<li>Check if the font is variable,</li>
+<li>Check if it has a <code>GEXT</code> axis, (and if not use the <code>wdth</code> axis or just ask the user!)</li>
+<li>Use the greedy algorithm to break lines.</li>
+<li>Stretch each line until they fit!!</li>
+</ol>
+<p>This might still fail, by the way, as not every line is guaranteed to be filled (as not every character us guaranteed to be affected by every axis.) But it is hell a lot better than inserting ugly straight line Kashidas.</p>
+<h2 id="spacing-clusters">Spacing Clusters</h2>
+<p>I promised unhingedness. How about this:</p>
+<p><img src="https://blog.ar-ms.me/thoughts/practical-arabic-justification/just-cluster-spacing.png" alt="spacing clusters justification" /></p>
+<p>Instead of spacing between words, Arabic text can increase the spacing between clusters!! Nobody does it this way but it would be cool. Do not actually do that.</p>
+<h2 id="priority-list">Priority list</h2>
+<p>Before setting up rules for justification, the typesetter first and foremost should ask the user which method to use! The user know the font they are using and they know which method they prefer. If they want to justify their text by flexing spaces (aka Knuth-Plass), let them. If they want to use the <em>weight</em> axis instead of the <em>width</em> axis, sure. If they want to specify specfic OpenType features to use for justification (like using a number of Stylistic sets or Swashes), then that's what they want.</p>
+<p>It is perhaps the best way to go on about this, honestly. Unless they ask for Kashidas, then you crash the software.</p>
+<p>If I were to create a priority system of justification, I would set it as follows:</p>
+<ol>
+<li>If the font is <a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/#variable-fonts">variable</a>, check if it has an axis specified for justification. Could be <code>GEXT</code> or <code>JSTF</code> or w/e (or ask the user!).</li>
+<li>If it does, use it. If it does not, check for <a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/#opentype-features"><code>jalt</code></a>s.</li>
+<li>If they exist, use them. If they do not, well now you have to use <a href="https://blog.ar-ms.me/thoughts/practical-arabic-justification/#kashidas">Kashidas</a>. Insert those between letters as needed. But not any letters!! There are rules!!</li>
+<li>And for God's sake reshape the text after inserting them Kashidas. It is what the shaper is there for.</li>
+</ol>
+</main>
+
+			
+			
+				<footer>
+					<small>
+						
+							<a class="mylink" href="mailto:a.sibahi@gmail.com" rel="me">Mail</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;x.com&#x2F;@asibahi" rel="me">Twitter</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;typo.social&#x2F;@asibahi" rel="me">typo.social</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;sr.ht&#x2F;~asibahi&#x2F;" rel="me">SourceHut</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;github.com&#x2F;asibahi" rel="me">GitHub</a>
+						
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;about&#x2F;">Cat</a>
+						
+					</small>
+				</footer>
+			
+		</div>
+	</body>
+</html>

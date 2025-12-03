@@ -1,0 +1,294 @@
+<!doctype html>
+<html  dir="ltr" >
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Musings"
+		/>
+		<title>Abdul Rahman Sibahi | Define Zig Enums from Data</title>
+		<link rel="stylesheet" href="https://blog.ar-ms.me/style.css?h=5e9f4e540307a223aec7" />
+	</head>
+
+	<body>
+
+		This website has moved to <a href="http://blog.ar-ms.me/">blog.ar-ms.me</a>. No further content will be published on the  <a href="https://www.un.org/unispal/document/a-hrc-59-23-from-economy-of-occupation-to-economy-of-genocide-report-special-rapporteur-francesca-albanese-palestine-2025/">Github</a> hosted version.
+
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			
+	<header class="space">
+		<a href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;"> ⏏️ </a>
+
+		
+			<h1>Define Zig Enums from Data</h1>
+			
+
+			<nav>
+				
+					<p class="secondary">2025-08-13</p>
+				 
+				<details class="secondary">
+					<summary> Contents </summary>
+					<ul>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/define-zig-enums-from-data/#library-structure-outline">Library Structure Outline</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/define-zig-enums-from-data/#problem-statement">Problem Statement</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/define-zig-enums-from-data/#generate-zig">generate.zig</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/define-zig-enums-from-data/#build-zig">build.zig</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/define-zig-enums-from-data/#the-library">The Library</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/thoughts/define-zig-enums-from-data/#conclusion">Conclusion</a>
+							
+						</li>
+						
+					</ul>
+				</details>
+				
+			</nav>
+		
+	</header>
+
+			
+			
+	<main><p>I am working currently on a small Zig library which I am not quite ready to talk about yet. However, it involves parsing a big table of data and then doing operations based on that data.</p>
+<p>For the remainder of this article, I shall pretend the library is about wind directions.</p>
+<blockquote>
+<p>Note that this article uses Zig <code>0.14.1</code>. Big changes have happened in the <code>master</code> branch since that was released. Though the parts discussed are probably still the same.</p>
+</blockquote>
+<h2 id="library-structure-outline">Library Structure Outline</h2>
+<p>There is a data file called <code>WindData.txt</code>. It looks something like this.<sup class="footnote-reference" id="fr-gemini-1"><a href="#fn-gemini">1</a></sup></p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>00;Mistral;N
+</span><span>01;Bora;N
+</span><span>02;Sirocco;S
+</span><span>03;Khamaseen;S
+</span><span>04;Chinook;W
+</span><span>05;Zonda;W
+</span><span>06;Föhn;S
+</span><span>07;Santa Ana;E
+</span><span>08;Harmattan;E
+</span><span>09;Leste;E
+</span><span>0A;Pampero;S
+</span><span>0B;Nor&#39;easter;N
+</span><span>0C;Southerly Buster;S
+</span><span>0D;Berg Wind;E
+</span><span>0E;Vendavales;S
+</span></code></pre>
+<p>This text file is parsed by a <code>generate.zig</code> file that organizes winds by their direction. The data is put into a <code>wind_data.zon</code> file, which is added by the build system as an <code>Import</code> so it is simply imported into the code base and .. calculated on.</p>
+<p>The <code>enum</code> that describes wind directions is duplicated between the main code base and <code>generate.zig</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const </span><span>Direction </span><span style="font-weight:bold;color:#a71d5d;">= enum </span><span>{ N, E, S, W };
+</span></code></pre>
+<h2 id="problem-statement">Problem Statement</h2>
+<p>What if a new version of the data adds a new wind direction: <code>U</code> (for Upwards)? Now the code fails! It needs a way to create the type out of the data.</p>
+<p>A rational person would just add the new direction manually, because the algorithms depending on it are going to need to change anyway.</p>
+<p>The normal solution (in widely used rust crate <code>wind-direction</code>, for example) is good old fashioned code generation using a <code>generate.py</code> script that is run manually every once in a while by the maintainers, which generates a <code>tables.rs</code> file that includes the above enum.</p>
+<p>But this is Zig. Things are not done with code generation. Things are done with <code>comptime</code> and build systems!</p>
+<hr />
+<h2 id="generate-zig"><code>generate.zig</code></h2>
+<p>I will spare you the boring mechanical parts of <code>generate.zig</code> that read a file and iterate over each line and collects the data into some sort of hashmap. The interesting bit I want to talk about is generating <code>type-definition.zon</code>.</p>
+<p>During file reading, all the direction strings are collected into a set to make sure there are no repeats. This is simple enough code.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">var </span><span>set: std.StringArrayHashMapUnmanaged(void) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .empty</span><span>;
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// later in the loop,
+</span><span style="font-weight:bold;color:#a71d5d;">try</span><span> set.put(gpa, wind_direction_string, {});
+</span></code></pre>
+<p>After the set is collected, it needs to be serialized into <code>zon</code> (which is Zig's own <code>json</code>-like data type). This is as simple as outputting text to a file, but the Zig standard library provides some helpful builtins.<sup class="footnote-reference" id="fr-json-1"><a href="#fn-json">2</a></sup> This is easiest way I found to serialize the strings to what Zig calls <code>enum_literal</code>s. (I will get back to that).</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> out </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.io.getStdOut().writer(); </span><span style="font-style:italic;color:#969896;">// &lt;-- replace with output file
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// after finishing up the set.
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> directions </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> set.keys();
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">var</span><span> sz </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.zon.stringify.serializer(out, .{});
+</span><span style="font-weight:bold;color:#a71d5d;">var</span><span> container </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> sz.beginTuple(.{});
+</span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(directions, 0</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>direction, idx</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(idx </span><span style="font-weight:bold;color:#a71d5d;">!= </span><span style="color:#0086b3;">0</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> sz.writer.writeByte(</span><span style="color:#183691;">&#39;,&#39;</span><span>); </span><span style="font-style:italic;color:#969896;">// a bit hacky but w/e
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> sz.ident(direction);
+</span><span>}
+</span><span style="font-weight:bold;color:#a71d5d;">try</span><span> container.end();
+</span><span style="font-style:italic;color:#969896;">// maybe should print a new line here too?
+</span></code></pre>
+<p>And voila! Here is the happy <code>data.zon</code>. Note that this is written to an output file, not <code>stdout</code> like the code snippet below.</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>.{.N,.E,.S,.W}
+</span></code></pre>
+<h2 id="build-zig"><code>build.zig</code></h2>
+<p>This is the least interesting part. It is just plumbing. Here is the code. It would get invoked whenever <code>zig build</code> commands are called, and cached accordingly, hopefully?</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-style:italic;color:#969896;">// calling genrate script
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> generate_wind_data </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.addExecutable(.{
+</span><span>    .name </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#183691;">&quot;wind_dir_data&quot;</span><span>,
+</span><span>    .root_source_file </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.path(</span><span style="color:#183691;">&quot;tools/generate.zig&quot;</span><span>),
+</span><span>    .target </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.graph.host,
+</span><span>});
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> generate_step </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.addRunArtifact(generate_wind_data);
+</span><span>generate_step.addFileArg(b.path(</span><span style="color:#183691;">&quot;WindData.txt&quot;</span><span>));
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> wind_zon </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> generate_step.addOutputFileArg(</span><span style="color:#183691;">&quot;data.zon&quot;</span><span>);
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// Main library.
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> lib_mod </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.createModule(.{
+</span><span>    .root_source_file </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.path(</span><span style="color:#183691;">&quot;src/lib.zig&quot;</span><span>),
+</span><span>    .target </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> target,
+</span><span>    .optimize </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> optimize,
+</span><span>});
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// piping the two
+</span><span>lib_mod.addAnonymousImport(
+</span><span>    </span><span style="color:#183691;">&quot;wind_tables&quot;</span><span>,
+</span><span>    .{ .root_source_file </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> wind_zon },
+</span><span>);
+</span></code></pre>
+<p>And that's it. Fairly simple code if you're familiar with the Zig build system.</p>
+<h2 id="the-library">The Library</h2>
+<p>Here is the cool stuff, if I may. Since this for defining a normal, non-generic type, we shall start it thus. All the code in the following snippets will be in there.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> WindData </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>WD: {
+</span><span>    </span><span style="font-style:italic;color:#969896;">// All following code is in here.
+</span><span>};
+</span></code></pre>
+<p>First, we need to <code>@import</code> the data. That's why it is in a <code>zon</code> file to begin with! But import as what type? In <code>0.14.1</code>, we still need to define the types <code>zon</code> imports (a restriction I understand is lifted in <code>master</code>).</p>
+<p>Zig has a special <code>comptime</code> only type called <code>enum_literal</code>. Oddly enough, unlike <code>comptime_int</code> and <code>comptime_float</code>, you cannot just do this:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-style:italic;color:#969896;">// does not compile
+</span><span style="font-weight:bold;color:#a71d5d;">const </span><span>foo: </span><span style="font-weight:bold;color:#a71d5d;">enum_literal =</span><span style="color:#0086b3;"> .bar</span><span>;
+</span></code></pre>
+<p>The type can actually be written out as <code>@TypeOf(.enum_literal)</code>. Sure. A <code>const</code> slice of those would be <code>[]const @TypeOf(.enum_literal)</code>. Not that you need the <code>const</code> here for deserialization, as you cannot deserialize into a mutable slice.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const </span><span>data: []</span><span style="font-weight:bold;color:#a71d5d;">const </span><span style="color:#62a35c;">@TypeOf</span><span>(.enum_literal) </span><span style="font-weight:bold;color:#a71d5d;">= @import</span><span>(</span><span style="color:#183691;">&quot;test.zon&quot;</span><span>);
+</span></code></pre>
+<p>Then we need to iterate over the fields and convert them, one by one, to another type. This time it is <code>std.builtin.Type.EnumField</code>. An array of which will become our final <code>enum</code>. We create a <code>BoundedArray</code> at home with just an index and an iterator. This code was pretty much lifted from <a href="https://mitchellh.com/writing/zig-comptime-tagged-union-subset">Mitchell Hashimoto's 'Tagged Union Subsets with Comptime in Zig' article</a>, which is actually the inspiration for <em>this</em> post.<sup class="footnote-reference" id="fr-matklad-1"><a href="#fn-matklad">3</a></sup></p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">var </span><span>i: </span><span style="font-weight:bold;color:#a71d5d;">usize = </span><span style="color:#0086b3;">0</span><span>;
+</span><span style="font-weight:bold;color:#a71d5d;">var </span><span>fields: [data.len]</span><span style="font-weight:bold;color:#a71d5d;">std.builtin.Type.EnumField = </span><span style="color:#0086b3;">undefined</span><span>;
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// outer: // uneeded block label. see below
+</span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(data) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>literal</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">@tagName</span><span>(literal);
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// // Deduplication code. It is not needed because the file is
+</span><span>    </span><span style="font-style:italic;color:#969896;">// // generated from a hash set.
+</span><span>    </span><span style="font-style:italic;color:#969896;">// for (fields[0..i]) |f|
+</span><span>    </span><span style="font-style:italic;color:#969896;">//     if (std.mem.eql(u8, f.name, name))
+</span><span>    </span><span style="font-style:italic;color:#969896;">//         continue :outer;
+</span><span>
+</span><span>    fields[i] </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{
+</span><span>        .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> name,
+</span><span>        .value </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> i,
+</span><span>    };
+</span><span>    i </span><span style="font-weight:bold;color:#a71d5d;">+= </span><span style="color:#0086b3;">1</span><span>;
+</span><span>}
+</span></code></pre>
+<p>Now we simply create the <code>enum</code> with the helpful builtin <code>@Type</code>.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">break</span><span> :WD </span><span style="color:#62a35c;">@Type</span><span>(.{ .@</span><span style="color:#183691;">&quot;enum&quot; </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{
+</span><span>    .tag_type </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> usize,
+</span><span>    .fields </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> fields[0</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>i],
+</span><span>    .decls </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> &amp;.{},
+</span><span>    .is_exhaustive </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">true</span><span>, </span><span style="font-style:italic;color:#969896;">// maybe?
+</span><span>} });
+</span></code></pre>
+<p>Fairly simple. One small trick remains. <code>tag_type</code> is not an optional value, so we need to specify it. It is the integer that should hold the results of the enum.. <code>usize</code> is playing it safe, because it is extremely unlikely to hold more than .. whatever the largest <code>usize</code> is. But that's a very big enum for something than potentially fit into one byte. So it is incumbent upon us to create the smallest integer possible.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const </span><span>backing_int: </span><span style="font-weight:bold;color:#a71d5d;">type = </span><span style="color:#62a35c;">@Type</span><span>(.{ .int </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{
+</span><span>    .bits </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="font-style:italic;color:#969896;">// what to put here??
+</span><span>    .signedness </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .unsigned</span><span>,
+</span><span>} });
+</span></code></pre>
+<p>To calculate the smallest number of bits that can hold our <code>fields</code> count, two simple (for computers at least) math operations are needed. First, <code>i</code> (our counter) is raised to the nearest power of two. Then the <code>log2</code> is taken from it. Boom. Two <code>std.math</code> function calls and that is IT.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> next_p_of_2 </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.math.ceilPowerOfTwoAssert(usize, i </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">1</span><span>);
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> bits </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.math.log2_int(usize, next_p_of_2);
+</span></code></pre>
+<p>And this does it. Here is the full code.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> WindData </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>WD: {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>data: []</span><span style="font-weight:bold;color:#a71d5d;">const </span><span style="color:#62a35c;">@TypeOf</span><span>(.enum_literal) </span><span style="font-weight:bold;color:#a71d5d;">= @import</span><span>(</span><span style="color:#183691;">&quot;test.zon&quot;</span><span>);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>i: </span><span style="font-weight:bold;color:#a71d5d;">usize = </span><span style="color:#0086b3;">0</span><span>;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>fields: [data.len]</span><span style="font-weight:bold;color:#a71d5d;">std.builtin.Type.EnumField = </span><span style="color:#0086b3;">undefined</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(data) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>literal</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">@tagName</span><span>(literal);
+</span><span>
+</span><span>        fields[i] </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{
+</span><span>            .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> name,
+</span><span>            .value </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> i,
+</span><span>        };
+</span><span>        i </span><span style="font-weight:bold;color:#a71d5d;">+= </span><span style="color:#0086b3;">1</span><span>;
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> next_p_of_2 </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.math.ceilPowerOfTwoAssert(usize, i </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">1</span><span>);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> bits </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.math.log2_int(usize, next_p_of_2);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">break</span><span> :WD </span><span style="color:#62a35c;">@Type</span><span>(.{ .@</span><span style="color:#183691;">&quot;enum&quot; </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{
+</span><span>        .tag_type </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">@Type</span><span>(.{ .int </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .{
+</span><span>            .bits </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> bits,
+</span><span>            .signedness </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .unsigned</span><span>,
+</span><span>        } }),
+</span><span>        .fields </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> fields[0</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>i],
+</span><span>        .decls </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> &amp;.{},
+</span><span>        .is_exhaustive </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">true</span><span>,
+</span><span>    } });
+</span><span>};
+</span></code></pre>
+<p>Your <code>enum</code> is ready. Now your data definition is resilient to new types added to the database. You still need to fix all the <code>switch</code> statements, tho.</p>
+<hr />
+<h2 id="conclusion">Conclusion</h2>
+<p>In the actual library I just put out the enum definition into its own separate file that is imported by both <code>generate.zig</code> and the library. But hey, this was a fun exercise.</p>
+<p>Until later.</p>
+<hr />
+<footer class="footnotes">
+<ol class="footnotes-list">
+<li id="fn-gemini">
+<p>Generated with Gemini help. <a href="#fr-gemini-1">↩</a></p>
+</li>
+<li id="fn-json">
+<p>Unlike formatting and <code>json</code> serialization, <code>zon</code> serialization does not seem to depend on defining <a href="https://www.openmymind.net/Writing-Json-To-A-Custom-Output-in-Zig/">specific magic functions</a> to customize the behaviour. <a href="#fr-json-1">↩</a></p>
+</li>
+<li id="fn-matklad">
+<p>Also, slightly related, is <a href="https://matklad.github.io/2025/08/08/partially-matching-zig-enums.html">matklad's Partially Matching Zig Enums</a> <a href="#fr-matklad-1">↩</a></p>
+</li>
+</ol>
+</footer>
+</main>
+
+			
+			
+				<footer>
+					<small>
+						
+							<a class="mylink" href="mailto:a.sibahi@gmail.com" rel="me">Mail</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;x.com&#x2F;@asibahi" rel="me">Twitter</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;typo.social&#x2F;@asibahi" rel="me">typo.social</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;sr.ht&#x2F;~asibahi&#x2F;" rel="me">SourceHut</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;github.com&#x2F;asibahi" rel="me">GitHub</a>
+						
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;about&#x2F;">Cat</a>
+						
+					</small>
+				</footer>
+			
+		</div>
+	</body>
+</html>

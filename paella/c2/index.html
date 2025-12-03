@@ -1,0 +1,1004 @@
+<!doctype html>
+<html  dir="ltr" >
+	<!-- This site was built using Zola (getzola.com) and heavily edited version of the Hook theme (https://www.getzola.org/themes/hook/) -->
+
+	<head>
+		<meta charset="utf-8" />
+		<!-- accent color in _theme.scss -->
+		<meta name="theme-color" content=" rgb(203, 132, 0)" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta
+			name="description"
+			content="Musings"
+		/>
+		<title>Abdul Rahman Sibahi | Writing a C Compiler, Chapter 2, in Zig</title>
+		<link rel="stylesheet" href="https://blog.ar-ms.me/style.css?h=5e9f4e540307a223aec7" />
+	</head>
+
+	<body>
+
+		This website has moved to <a href="http://blog.ar-ms.me/">blog.ar-ms.me</a>. No further content will be published on the  <a href="https://www.un.org/unispal/document/a-hrc-59-23-from-economy-of-occupation-to-economy-of-genocide-report-special-rapporteur-francesca-albanese-palestine-2025/">Github</a> hosted version.
+
+		<a href="https://youtu.be/tXGQPGi-fZw">
+			<img src=" /eagle.png" class="eagle" />
+		</a>
+		<div class="container">
+			
+	<header class="space">
+		<a href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;"> ⏏️ </a>
+
+		
+			<h1>Writing a C Compiler, Chapter 2, in Zig</h1>
+			
+
+			<nav>
+				
+					<p class="secondary">2025-05-14</p>
+				 
+				<details class="secondary">
+					<summary> Contents </summary>
+					<ul>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c2/#running-the-tests-with-zig-build-test">Running the tests with zig build test</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c2/#lexer">Lexer</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c2/#parsing">Parsing</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c2/#intermediate-representation">Intermediate Representation</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c2/#string-interning">String Interning</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c2/#codegen">Codegen</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c2/#fixing-up-instructions">Fixing Up Instructions</a>
+							
+							<ul>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/paella/c2/#pseudoregisters">Pseudoregisters</a>
+								</li>
+								
+								<li>
+									<a href="https://blog.ar-ms.me/paella/c2/#fixing-instructions">Fixing Instructions</a>
+								</li>
+								
+							</ul>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c2/#code-emission">Code Emission</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c2/#state-machine">State Machine</a>
+							
+						</li>
+						
+						<li>
+							<a href="https://blog.ar-ms.me/paella/c2/#lessons-learned">Lessons Learned</a>
+							
+						</li>
+						
+					</ul>
+				</details>
+				
+			</nav>
+		
+	</header>
+
+			
+			
+	<main><p>So, with the <a href="https://blog.ar-ms.me/paella/c1/">first chapter</a> of <a href="https://norasandler.com/2022/03/29/Write-a-C-Compiler-the-Book.html">Writing a C Compiler</a> behind us, it is time to start on the second chapter: Unary Operators. But first, a word from <code>build.zig</code> land.</p>
+<h2 id="running-the-tests-with-zig-build-test">Running the tests with <code>zig build test</code></h2>
+<p>The tests for this Book live in <a href="https://github.com/nlsandler/writing-a-c-compiler-tests">their own repository</a>, which I have dutifully cloned and run tests in.</p>
+<p>The process I followed to run the tests is fairly manual:</p>
+<ol>
+<li>navigate to the test directory.</li>
+<li>run the command <code>arch -x86_64 zsh</code> (which I have cleverly aliased to <code>x86</code>). This runs a x86 version of <code>zsh</code>.</li>
+<li>run the tests.</li>
+</ol>
+<p>When I was doing <a href="https://github.com/asibahi/trjm">my Rust implementation</a>, I kept a terminal accessible with a global hotkey and I kept the inner shell running at all times.</p>
+<p>With <code>build.zig</code>, I looked for a way to do that automatically. The <code>Build</code> object, which is central to <code>build.zig</code> has a nice <code>addSystemCommand</code> method, which I could use to run my stuff in. Now remained the problem of how to run the tests in the x86 shell.</p>
+<p>My first thought was to have the command as <code>arch -x86_64 test_compiler ..etc</code> (<code>test_compiler</code> being the test script provided). While it worked, as in the tests for chapter 1 all ran fine, upon further reading I realized that the <code>arch</code> actually chooses which binary to run from a macOS Universal Binary. It has no effect on python scripts, and the simple tests on chapter 1 worked fine either way. So I asked around, and some kind soul pointed me to the right thing to search for: Subshells.</p>
+<p>See, this might seem obvious if you've lived in Unix land all your life, but shells are applications too. You can pass command line arguments to them!! So, <code>bash -c "echo foo"</code>, runs <code>bash</code>, runs the command <code>echo foo</code> in <code>bash</code>, then exits. Perfect.</p>
+<p>Putting these two together, this was the added bit to <code>build.zig</code>:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> test_step </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.step(</span><span style="color:#183691;">&quot;test&quot;</span><span>, </span><span style="color:#183691;">&quot;Run tests&quot;</span><span>);
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// subshells. how do they work.
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> inner_command </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> std.mem.join(b.allocator, </span><span style="color:#183691;">&quot; &quot;</span><span>, &amp;.{
+</span><span>    </span><span style="color:#183691;">&quot;../writing-a-c-compiler-tests/test_compiler&quot;</span><span>,
+</span><span>    b.pathJoin(&amp;.{ b.exe_dir, </span><span style="color:#183691;">&quot;paella&quot; </span><span>}),
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> std.mem.join(
+</span><span>        b.allocator,
+</span><span>        </span><span style="color:#183691;">&quot; &quot;</span><span>,
+</span><span>        b.args </span><span style="font-weight:bold;color:#a71d5d;">orelse</span><span> &amp;.{</span><span style="color:#183691;">&quot;&quot;</span><span>},
+</span><span>    ),
+</span><span>});
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// does this work like i think it does?
+</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> test_command </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> b.addSystemCommand(
+</span><span>    &amp;.{ </span><span style="color:#183691;">&quot;arch&quot;</span><span>, </span><span style="color:#183691;">&quot;-x86_64&quot;</span><span>, </span><span style="color:#183691;">&quot;zsh&quot;</span><span>, </span><span style="color:#183691;">&quot;-c&quot;</span><span>, inner_command },
+</span><span>);
+</span><span>
+</span><span>test_command.step.dependOn(b.getInstallStep());
+</span><span>test_step.dependOn(</span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>test_command.step);
+</span></code></pre>
+<p>I am unreasonably happy with this. Using regular Zig standard library tools like <code>std.mem.join</code> allowed to join together the commands I am passing to the <code>zsh</code> subshell, and voila!!</p>
+<p>Now the tests (say for chapter 1) can be ran "simply" with <code>zig build test -- --chapter 1</code>. Great success!</p>
+<hr />
+<h2 id="lexer">Lexer</h2>
+<p>There are three tokens to add in this chapter: <code>~</code>, <code>-</code>, and <code>--</code>. The decrement operator is only being tokenized here to reject illegal C syntax like <code>return --2</code>, but otherwise will not be implemented.</p>
+<p>So our <code>Tag</code> enum grows<sup class="footnote-reference" id="fr-main-1"><a href="#fn-main">1</a></sup> to have these three tokens: <code>tilde, hyphen</code>. As I am not planning to implement the book's extra credit this time around, I will just have the double hyphen lex into the <code>invalid</code> token. This would reject lexing valid code like <code>x--</code>, but I do not think this is going to be present into the test cases. We will see.</p>
+<p>The <code>State</code> enum is a bit more interesting. It cannot accept two consecutive hyphens, so seeing a hyphen would put it into the <code>hyphen</code> state, where if it sees another hyphen, it puts out <code>Tag.invalid</code>, or <code>Tag.hyphen</code> otherwise.</p>
+<p>So, if the state is at <code>.start</code>, and the lexer encounters a <code>'-'</code> character, it just switches gear to the <code>.hyphen</code> state. Labelled <code>switch</code> in action. Then in there, triage happens. The code is honestly copied, again, from the Zig compiler, with adjustments.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>state: </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(State.start) {
+</span><span style="color:#0086b3;">    .start </span><span style="font-weight:bold;color:#a71d5d;">=&gt; switch </span><span>(self.buffer[self.index]) {
+</span><span>        </span><span style="color:#183691;">&#39;~&#39; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            result.tag </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .tilde</span><span>;
+</span><span>            self.index </span><span style="font-weight:bold;color:#a71d5d;">+= </span><span style="color:#0086b3;">1</span><span>;
+</span><span>        },
+</span><span>        </span><span style="color:#183691;">&#39;-&#39; </span><span style="font-weight:bold;color:#a71d5d;">=&gt; continue</span><span> :state</span><span style="color:#0086b3;"> .hyphen</span><span>,
+</span><span>        </span><span style="font-style:italic;color:#969896;">// etc
+</span><span style="color:#0086b3;">    .hyphen </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>        self.index </span><span style="font-weight:bold;color:#a71d5d;">+= </span><span style="color:#0086b3;">1</span><span>;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(self.buffer[self.index]) {
+</span><span>            </span><span style="color:#183691;">&#39;-&#39; </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> result.tag </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .invalid</span><span>,
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">else =&gt;</span><span> result.tag </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .hyphen</span><span>,
+</span><span>        }
+</span><span>    },
+</span><span>    </span><span style="font-style:italic;color:#969896;">// etc
+</span><span>}
+</span></code></pre>
+<p>This should be it. Time to put the new testing command into action.</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>Ran 43 tests in 5.432s
+</span><span>
+</span><span>OK
+</span></code></pre>
+<p>Both of them work. Time for AST and parsing.</p>
+<h2 id="parsing">Parsing</h2>
+<p>Changes to the AST are fairly minimal. There are two unary operations: negation, and complement. Instead of adding a separate <code>UnaryOp</code> enum as the Book suggests, I am going to embed them right into <code>Expr</code> as separate tags, updating the pretty printer while I am at it.<sup class="footnote-reference" id="fr-json-1"><a href="#fn-json">2</a></sup></p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Expr </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    constant: </span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>,
+</span><span>    unop_negate: </span><span style="font-weight:bold;color:#a71d5d;">*Expr</span><span>,
+</span><span>    unop_complement: </span><span style="font-weight:bold;color:#a71d5d;">*Expr</span><span>,
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">format</span><span>(
+</span><span>        self: </span><span style="color:#62a35c;">@This</span><span>(),
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">comptime </span><span style="color:#0086b3;">_</span><span>: []</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> u8,
+</span><span>        </span><span style="color:#0086b3;">_</span><span>: std.fmt.FormatOptions,
+</span><span>        writer: </span><span style="font-weight:bold;color:#a71d5d;">anytype</span><span>,
+</span><span>    ) </span><span style="font-weight:bold;color:#a71d5d;">!void </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(self) {
+</span><span style="color:#0086b3;">            .constant </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>c</span><span style="font-weight:bold;color:#a71d5d;">| try</span><span> writer.print(</span><span style="color:#183691;">&quot;{d}&quot;</span><span>, .{c}),
+</span><span style="color:#0086b3;">            .unop_negate </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>e</span><span style="font-weight:bold;color:#a71d5d;">| try</span><span> writer.print(</span><span style="color:#183691;">&quot; -{}&quot;</span><span>, .{e}),
+</span><span style="color:#0086b3;">            .unop_complement </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>e</span><span style="font-weight:bold;color:#a71d5d;">| try</span><span> writer.print(</span><span style="color:#183691;">&quot; ~{}&quot;</span><span>, .{e}),
+</span><span>        }
+</span><span>    }
+</span><span>};
+</span></code></pre>
+<p>Updating the parsing functions is a bit more involved, however. Now is the start of PEMDAS, and time to start our recursive descemt into madness.<sup class="footnote-reference" id="fr-madness-1"><a href="#fn-madness">3</a></sup> This is pretty much the same function provided in the book, except that the operation is chosen immediately.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">parse_expr</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!*ast.Expr </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> current </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.next() </span><span style="font-weight:bold;color:#a71d5d;">orelse
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.ExpectExpr;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(current.tag) {
+</span><span style="color:#0086b3;">        .number_literal </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> lit </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> tokens.buffer[current.loc.start</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>current.loc.end];
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> res </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> std.fmt.parseInt(u64, lit, </span><span style="color:#0086b3;">10</span><span>);
+</span><span>
+</span><span>            </span><span style="font-style:italic;color:#969896;">//         vvv this helper function just allocates and sets
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return try </span><span>create(ast.Expr, alloc, .{ .constant </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> res });
+</span><span>        },
+</span><span style="color:#0086b3;">        .hyphen </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> inner_exp </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(alloc, tokens);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return try </span><span>create(ast.Expr, alloc, .{ .unop_negate </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> inner_exp });
+</span><span>        },
+</span><span style="color:#0086b3;">        .tilde </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> inner_exp </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(alloc, tokens);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return try </span><span>create(ast.Expr, alloc, .{ .unop_complement </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> inner_exp });
+</span><span>        },
+</span><span style="color:#0086b3;">        .l_paren </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> inner_exp </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>parse_expr(alloc, tokens);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>expect(.r_paren, tokens);
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> inner_exp;
+</span><span>        },
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; return error</span><span>.ExpectExpr,
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>Now the parsing is done, but to test a small annoyance needs to be fixed. In <code>asm_gen.zig</code>, there is a switch over expressions, and it needs to handle the new modes, even tho it is not being called right now. This tedium and the need to repeat it for every step is partially why I stopped the Rust implementation. Adding a <code>else =&gt; @panic("unimplemented"),</code> to that <code>switch</code> smoothes things over for now.</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>Ran 43 tests in 6.363s
+</span><span>
+</span><span>OK
+</span></code></pre>
+<p>Yuppee.</p>
+<p>Last but not least, even though it is not needed for the first chapters, as the only identifier is <code>main</code>, I figured I'd try some <code>comptime</code> magic to improve my expectation experience. I changed <code>expect</code> a little bit so it returns a string when I am asking for an identifier, but <code>void</code> otherwise.<sup class="footnote-reference" id="fr-matklad-1"><a href="#fn-matklad">4</a></sup></p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">expect</span><span>(
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">comptime </span><span>expected: </span><span style="font-weight:bold;color:#a71d5d;">lexer.Token.Tag</span><span>,
+</span><span>    tokens: </span><span style="font-weight:bold;color:#a71d5d;">*lexer.Tokenizer</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!if </span><span>(expected </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .identifier</span><span>)
+</span><span>    []</span><span style="font-weight:bold;color:#a71d5d;">const</span><span> u8
+</span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(tokens.next()) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>actual</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(actual.tag </span><span style="font-weight:bold;color:#a71d5d;">!=</span><span> expected)
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.SyntaxError;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(expected </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .identifier</span><span>)
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> tokens.buffer[actual.loc.start</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>actual.loc.end];
+</span><span>    } </span><span style="font-weight:bold;color:#a71d5d;">else return error</span><span>.SyntaxError;
+</span><span>}
+</span></code></pre>
+<hr />
+<h2 id="intermediate-representation">Intermediate Representation</h2>
+<p>The Book uses its own version of Intermediate Representation, called <code>TACKY</code>. It is a variation of a popular IR strategy called <em>three-address code</em>, hence the name.</p>
+<p><code>TACKY</code> uses its own AST, and it would slot between the program's AST and the assembly's AST. This is the first pass. So many strings.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> std </span><span style="font-weight:bold;color:#a71d5d;">= @import</span><span>(</span><span style="color:#183691;">&quot;std&quot;</span><span>);
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Prgm </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    func_def: </span><span style="font-weight:bold;color:#a71d5d;">*FuncDef</span><span>,
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>FuncDef </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    name: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>    </span><span style="font-style:italic;color:#969896;">// for similar reasons to its use in assembly AST
+</span><span>    instrs: std.ArrayListUnmanaged(Inst),
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Inst </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    ret: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>,
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// decided to splat the operator here, like discussed in chapter 1.
+</span><span>    unop_negate: </span><span style="font-weight:bold;color:#a71d5d;">Unary</span><span>,
+</span><span>    unop_complement: </span><span style="font-weight:bold;color:#a71d5d;">Unary</span><span>,
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// to avoid excessive typing
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Unary </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>        src: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>,
+</span><span>        dst: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>,
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">init</span><span>(src: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>, dst: </span><span style="font-weight:bold;color:#a71d5d;">Value</span><span>) </span><span style="color:#62a35c;">@This</span><span>() {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .src </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> src, .dst </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> dst };
+</span><span>        }
+</span><span>    };
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Value </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    constant: </span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>,
+</span><span>    variable: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>};
+</span></code></pre>
+<p>The goal of this IR is to disentangle nested expressions by separating them into what is, at least in IR form, separate operations. This means that for an expression like <code>1 + 2 * 3</code><sup class="footnote-reference" id="fr-binary-1"><a href="#fn-binary">5</a></sup>, it is transformed into the following representation:</p>
+<pre data-lang="python" style="background-color:#ffffff;color:#323232;" class="language-python "><code class="language-python" data-lang="python"><span>tmp0 </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">2 </span><span style="font-weight:bold;color:#a71d5d;">* </span><span style="color:#0086b3;">3
+</span><span>tmp1 </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#0086b3;">1 </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span>tmp0
+</span><span style="font-weight:bold;color:#a71d5d;">return </span><span>tmp1
+</span></code></pre>
+<p>The Book provided <code>expr_emit_ir</code>, with my splatted data structures, looks like the following:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">expr_emit_ir</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    expr: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Expr</span><span>,
+</span><span>    instrs: </span><span style="font-weight:bold;color:#a71d5d;">*std.ArrayListUnmanaged</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">ir.Instr</span><span>),
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!ir.Value </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(expr</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>) {
+</span><span style="color:#0086b3;">        .constant </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>c</span><span style="font-weight:bold;color:#a71d5d;">| return</span><span> .{ .constant </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> c },
+</span><span style="color:#0086b3;">        .unop_negate </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>e</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(alloc, expr, instrs);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dst_name </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>make_temporary(alloc, </span><span style="color:#183691;">&quot;neg&quot;</span><span>);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>dst: </span><span style="font-weight:bold;color:#a71d5d;">ir.Value =</span><span> .{ .variable </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> dst_name };
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> instrs.append(alloc, .{ .unop_negate </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(src, dst) });
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> dst;
+</span><span>        },
+</span><span style="color:#0086b3;">        .unop_complement </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>e</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(alloc, expr, instrs);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dst_name </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>make_temporary(alloc, </span><span style="color:#183691;">&quot;cml&quot;</span><span>);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>dst: </span><span style="font-weight:bold;color:#a71d5d;">ir.Value =</span><span> .{ .variable </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> dst_name };
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> instrs.append(alloc, .{ .unop_complement </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(src, dst) });
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> dst;
+</span><span>        },
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>A bit repetitive, isn't it? So I put together the repeated logic into its own function, <code>unary_helper</code>:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">unary_helper</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    expr: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Expr</span><span>,
+</span><span>    instrs: </span><span style="font-weight:bold;color:#a71d5d;">*std.ArrayListUnmanaged</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">ir.Instr</span><span>),
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">comptime </span><span>prefix: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!struct </span><span>{ ir.Value, ir.Value } {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>expr_emit_ir(alloc, expr, instrs);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dst_name </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>make_temporary(alloc, prefix);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>dst: </span><span style="font-weight:bold;color:#a71d5d;">ir.Value =</span><span> .{ .variable </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> dst_name };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ src, dst };
+</span><span>}
+</span></code></pre>
+<p>Nothing fancy. <code>make_temporary</code> over here is just a function with an ever increasing static variable for creating always different variable names. However, I hit here the weirdest zig compile error I have seen, yet. <code>error: unable to resolve inferred error set</code>. What gives?</p>
+<p>Turns out when two recursive functions call each other, both with an inferred error type, Zig throws in the towel. Swift would've never given up and compiled, eventually;</p>
+<p>Apparently I had to specify the error type myself.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const </span><span>helper_error </span><span style="font-weight:bold;color:#a71d5d;">= error</span><span>{
+</span><span>    MakeTemporary, </span><span style="font-style:italic;color:#969896;">// return error value of `make_temporary`
+</span><span>    UnaryHelper,
+</span><span>};
+</span></code></pre>
+<p>... and changed <code>unary_helper</code> to this:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">unary_helper</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    expr: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Expr</span><span>,
+</span><span>    instrs: </span><span style="font-weight:bold;color:#a71d5d;">*std.ArrayListUnmanaged</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">ir.Instr</span><span>),
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">comptime </span><span>prefix: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>) helper_error</span><span style="font-weight:bold;color:#a71d5d;">!struct </span><span>{ ir.Value, ir.Value } {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>expr_emit_ir(alloc, expr, instrs) </span><span style="font-weight:bold;color:#a71d5d;">catch
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.UnaryHelper;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dst_name </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>make_temporary(alloc, prefix);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>dst: </span><span style="font-weight:bold;color:#a71d5d;">ir.Value =</span><span> .{ .variable </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> dst_name };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ src, dst };
+</span><span>}
+</span></code></pre>
+<p>And now it compiles. The rest of <code>ir_gen.zig</code>, is rahter a straightforward one to one between the two trees, and rather boring to implement. Instead, I will show you <code>make_temporary</code>. Zig has a weird way to define local static variables.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">make_temporary</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">comptime </span><span>prefix: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">helper_error!</span><span>[]</span><span style="font-weight:bold;color:#a71d5d;">const u8 </span><span>{
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// zig static variables
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>coun </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>ter: </span><span style="font-weight:bold;color:#a71d5d;">usize = </span><span style="color:#0086b3;">0</span><span>;
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.fmt.allocPrint(
+</span><span>        alloc,
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(prefix.len </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">0</span><span>) </span><span style="color:#183691;">&quot;temp&quot; </span><span style="font-weight:bold;color:#a71d5d;">else</span><span> prefix </span><span style="font-weight:bold;color:#a71d5d;">++ </span><span style="color:#183691;">&quot;.{}&quot;</span><span>,
+</span><span>        .{coun.ter},
+</span><span>    ) </span><span style="font-weight:bold;color:#a71d5d;">catch return error</span><span>.MakeTemporary;
+</span><span>    coun.ter </span><span style="font-weight:bold;color:#a71d5d;">+= </span><span style="color:#0086b3;">1</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> name;
+</span><span>}
+</span></code></pre>
+<p>First of all, non-Atomic is fine. All this is single threaded anyway. Second of all, any <em>variable</em> directly declared in a <code>struct</code> scope is static. So if you need a local static variable you define a <code>struct</code> with a .. variable. This is exactly the same semantics as declaring a global variable (or at file scope) except the scope here is a lot smaller.<sup class="footnote-reference" id="fr-struct-1"><a href="#fn-struct">6</a></sup> Mind bending a bit, but makes sense.</p>
+<p>To save on pretty printing this time, I figured to try <code>std.json.stringify</code> to get the IR output. This is the C file I am working on. So small and non-threatening.</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return ~-</span><span style="color:#0086b3;">3</span><span>;
+</span><span>}
+</span></code></pre>
+<p>And this is the IR output:</p>
+<pre data-lang="json" style="background-color:#ffffff;color:#323232;" class="language-json "><code class="language-json" data-lang="json"><span>{
+</span><span>	</span><span style="color:#183691;">&quot;func_def&quot;</span><span>: {
+</span><span>		</span><span style="color:#183691;">&quot;name&quot;</span><span>: </span><span style="color:#183691;">&quot;main&quot;</span><span>,
+</span><span>		</span><span style="color:#183691;">&quot;instrs&quot;</span><span>: {
+</span><span>			</span><span style="color:#183691;">&quot;items&quot;</span><span>: [
+</span><span>				{
+</span><span>					</span><span style="color:#183691;">&quot;unop_negate&quot;</span><span>: {
+</span><span>						</span><span style="color:#183691;">&quot;src&quot;</span><span>: {
+</span><span>							</span><span style="color:#183691;">&quot;constant&quot;</span><span>: </span><span style="color:#0086b3;">3
+</span><span>						},
+</span><span>						</span><span style="color:#183691;">&quot;dst&quot;</span><span>: {
+</span><span>							</span><span style="color:#183691;">&quot;variable&quot;</span><span>: </span><span style="color:#183691;">&quot;neg.0&quot;
+</span><span>						}
+</span><span>					}
+</span><span>				},
+</span><span>				{
+</span><span>					</span><span style="color:#183691;">&quot;unop_complement&quot;</span><span>: {
+</span><span>						</span><span style="color:#183691;">&quot;src&quot;</span><span>: {
+</span><span>							</span><span style="color:#183691;">&quot;variable&quot;</span><span>: </span><span style="color:#183691;">&quot;neg.0&quot;
+</span><span>						},
+</span><span>						</span><span style="color:#183691;">&quot;dst&quot;</span><span>: {
+</span><span>							</span><span style="color:#183691;">&quot;variable&quot;</span><span>: </span><span style="color:#183691;">&quot;cml.1&quot;
+</span><span>						}
+</span><span>					}
+</span><span>				},
+</span><span>				{
+</span><span>					</span><span style="color:#183691;">&quot;ret&quot;</span><span>: {
+</span><span>						</span><span style="color:#183691;">&quot;variable&quot;</span><span>: </span><span style="color:#183691;">&quot;cml.1&quot;
+</span><span>					}
+</span><span>				}
+</span><span>			],
+</span><span>			</span><span style="color:#183691;">&quot;capacity&quot;</span><span>: </span><span style="color:#0086b3;">5
+</span><span>		}
+</span><span>	}
+</span><span>}
+</span></code></pre>
+<p>Very longwinded, with some useless info. Why do I need to know the <code>ArrayListUnmanaged</code> capacity? Time to work on pretty printing and allocation bookkeeping. Not very interesting, to be honest, so I will skip writing about it.</p>
+<p>Except for string interning. that is interesting.</p>
+<h2 id="string-interning">String Interning</h2>
+<p>String interning is having a single storage for strings that are used throught the program. Keeping the source around is not enough, because of the new strings for the IR's temporary variables. Giving ownership of the strings to <code>ir.Value</code> is <em>fine</em>, except it is really easy to double free the strings when cleaning up. In fact, I did that when I was trying to not implement the string interner, and Zig's <code>DebugAllocator</code> dutifully caught it.</p>
+<p>The basic idea behind the interner is to have all strings owned by one repository that you can free at once at the end. One can use an arena, but the interner's structure is more efficient because it also avoids duplication of strings. It can be backed by a hashmap, so it can also attach information to each string. All in all it is a useful memory and resource management technique.</p>
+<p>The friendly people at the Zig discord, especially <a href="https://github.com/InKryption">InKryption</a> not only helped me out understand the data idea, bu actually provided me with a complete implementation.</p>
+<p>It makes use of Zig's, hoenstly weird, sentinel-terminated arrays: a generalization of C's null-terminated strings.</p>
+<p>The idea is as follows: a regular slice (say the <code>[]comst u8</code> we use and love) stores its length within it. It knows what length it is at all times. So if you read from it or iterate on it, it stops dutifully at the length it knows. A null-terminated string, however, would be<code> [:0]const u8</code>. When you read from it or iterate on it, it keeps going until it hits the <code>0</code>. (Obviously you can use any sentinel value but the <code>0</code> is very convenient for strings.)</p>
+<p>So the String Interner keeps as its backing data a regular <code>ArrayListUnmanaged(u8)</code> that I have been using before. Say it is called <code>bytes</code>.) But for any new string in the application, it appends it to the ArrayList then adds <code>0</code> byte at the end. And I keep its <em>starting</em> index around. When I want to use it, I take slice like so <code>bytes[starting_idx..:0]</code> and voila .. I have a slice of my string.</p>
+<p>The remaining pieces of the puzzle is two items in the Zig standard library: <code>StringIndexContext</code> and <code>StringIndexAdapter</code>. They're specifically designed for this specific use case. Who knew?</p>
+<p>A <code>Context</code> in Zig's hash maps is a simple enough idea. It just defines the <code>eql</code> and <code>hash</code> functions said hash map will use, with an optional backing data structe. An <code>Adapter</code> is used to override these two functions for speciifc operations. The <code>StringIndex</code> duo have slightly different implementation of the <code>eql</code> function, and if you're curious you can check them out in the standard library's code.<sup class="footnote-reference" id="fr-adapters-1"><a href="#fn-adapters">7</a></sup></p>
+<p>Without further ado, here is the full <code>StringInterner</code> provided thankfully by InKryption. I honestly had to read multiple times to wrap my head around what's going on, so I commented some parts of it.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> std </span><span style="font-weight:bold;color:#a71d5d;">= @import</span><span>(</span><span style="color:#183691;">&quot;std&quot;</span><span>);
+</span><span style="font-weight:bold;color:#a71d5d;">const </span><span>StringInterner </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    </span><span style="font-style:italic;color:#969896;">// state
+</span><span>    bytes: std.ArrayListUnmanaged(u8),
+</span><span>    map: std.HashMapUnmanaged(
+</span><span>        Id,
+</span><span>        void,
+</span><span>        std.hash_map.StringIndexContext,
+</span><span>        std.hash_map.default_max_load_percentage,
+</span><span>    ),
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// management
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>init: </span><span style="font-weight:bold;color:#a71d5d;">StringInterner =</span><span> .{
+</span><span>        .bytes </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .empty</span><span>,
+</span><span>        .map </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .empty</span><span>,
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">deinit</span><span>(self: </span><span style="font-weight:bold;color:#a71d5d;">*StringInterner</span><span>, allocator: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">void </span><span>{
+</span><span>        self.bytes.deinit(allocator);
+</span><span>        self.map.deinit(allocator);
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// type alias. store this in stuff.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub const</span><span> Idx </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> u32;
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// checks if a string is in or not. returns ID
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">getIdx</span><span>(
+</span><span>        self: </span><span style="font-weight:bold;color:#a71d5d;">*const StringInterner</span><span>,
+</span><span>        string: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>    ) </span><span style="font-weight:bold;color:#a71d5d;">?Idx </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> self.map.getKeyAdapted(string, self.hmAdapter());
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// get string from id
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">getString</span><span>(
+</span><span>        self: </span><span style="font-weight:bold;color:#a71d5d;">*const StringInterner</span><span>,
+</span><span>        idx: </span><span style="font-weight:bold;color:#a71d5d;">Idx</span><span>,
+</span><span>    ) </span><span style="font-weight:bold;color:#a71d5d;">?</span><span>[:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8 </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(</span><span style="font-weight:bold;color:#a71d5d;">!</span><span>self.map.containsContext(idx, self.hmCtx())) </span><span style="font-weight:bold;color:#a71d5d;">return </span><span style="color:#0086b3;">null</span><span>;
+</span><span>
+</span><span>        </span><span style="font-style:italic;color:#969896;">// cast is necessary for type inference reasons.
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>slice_sentinel: [:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8 = </span><span style="color:#62a35c;">@ptrCast</span><span>(self.bytes.items[idx</span><span style="font-weight:bold;color:#a71d5d;">..</span><span>]);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> std.mem.sliceTo(slice_sentinel, </span><span style="color:#0086b3;">0</span><span>);
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// the insert function. returns aither an existing idx or a new idx.
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">getOrPut</span><span>(
+</span><span>        self: </span><span style="font-weight:bold;color:#a71d5d;">*StringInterner</span><span>,
+</span><span>        allocator: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>        string: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>    ) </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator.Error!Idx </span><span>{
+</span><span>        </span><span style="font-style:italic;color:#969896;">// reserves capacity in both the backing array and the map
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> self.bytes.ensureUnusedCapacity(allocator, string.len </span><span style="font-weight:bold;color:#a71d5d;">+ </span><span style="color:#0086b3;">1</span><span>);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> self.map.ensureUnusedCapacityContext(allocator, </span><span style="color:#0086b3;">1</span><span>, self.hmCtx());
+</span><span>
+</span><span>        </span><span style="font-style:italic;color:#969896;">// getOrPut returns a reference to the key and the value. If it existed, they&#39;re
+</span><span>        </span><span style="font-style:italic;color:#969896;">// valid pointers. If not, their contents are undefined waiting for you to fill them.
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> gop </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> self.map.getOrPutAssumeCapacityAdapted(string, self.hmAdapter());
+</span><span>
+</span><span>        gop.value_ptr</span><span style="font-weight:bold;color:#a71d5d;">.* = </span><span>{}; </span><span style="font-style:italic;color:#969896;">// this is void, but it can be anything!! note void is zero-width
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(gop.found_existing) </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> gop.key_ptr</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>;
+</span><span>
+</span><span>        </span><span style="font-style:italic;color:#969896;">// unlikelt to hit that. the source files are tiny.
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(self.bytes.items.len </span><span style="font-weight:bold;color:#a71d5d;">&gt;</span><span> std.math.maxInt(Idx)) </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.OutOfMemory;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>new_idx: </span><span style="font-weight:bold;color:#a71d5d;">Idx = </span><span style="color:#62a35c;">@intCast</span><span>(self.bytes.items.len);
+</span><span>
+</span><span>        </span><span style="font-style:italic;color:#969896;">// indertion happens here
+</span><span>        self.bytes.appendSliceAssumeCapacity(string);
+</span><span>
+</span><span>        </span><span style="font-style:italic;color:#969896;">// don&#39;t forget to append the null byte !!
+</span><span>        self.bytes.appendAssumeCapacity(</span><span style="color:#0086b3;">0</span><span>);
+</span><span>
+</span><span>        </span><span style="font-style:italic;color:#969896;">// update the map through the pointer.
+</span><span>        gop.key_ptr</span><span style="font-weight:bold;color:#a71d5d;">.* =</span><span> new_idx;
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> new_idx;
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// helper functions to avoid a self referential struct
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">hmCtx</span><span>(self: </span><span style="font-weight:bold;color:#a71d5d;">*const StringInterner</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">std.hash_map.StringIndexContext </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .bytes </span><span style="font-weight:bold;color:#a71d5d;">= &amp;</span><span>self.bytes };
+</span><span>    }
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">hmAdapter</span><span>(self: </span><span style="font-weight:bold;color:#a71d5d;">*const StringInterner</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">std.hash_map.StringIndexAdapter </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .bytes </span><span style="font-weight:bold;color:#a71d5d;">= &amp;</span><span>self.bytes };
+</span><span>    }
+</span><span>};
+</span></code></pre>
+<p>I will currently use this structure as is, only changing the names to be <code>snake_case</code> as I cannot read <code>camelCase</code>. Later on I can use it to attach data to the strings. Fairly useful.</p>
+<p>My first go at this was to replace every string with <code>StringInterner.Idx</code>. Just make sure to pass a pointer to the interner when constructing these structures.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Prgm </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    func_def: </span><span style="font-weight:bold;color:#a71d5d;">*FuncDef</span><span>,
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>FuncDef </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>    name: </span><span style="font-weight:bold;color:#a71d5d;">utils.StringInterner.Idx</span><span>,
+</span><span>    instrs: std.ArrayListUnmanaged(Instr),
+</span><span>};
+</span><span>
+</span><span style="font-style:italic;color:#969896;">// and so on.
+</span></code></pre>
+<p>While this works and compiles fine, it turned out to be problematic when pretty printing. <code>Idx</code> is just a <code>u32</code> and stores no reference to the interner. And the <code>format</code> functions do not have an allocator or a user-space reference to use. So instead, I am changing the type to <code>[:0]const u8</code>, then storing slices from the interner rather than indices.</p>
+<p>Then adjust our <code>ir_gen</code> functions to pass a pointer to the interner through all of them. That or creating a makeshift <code>Ctx</code> type. Time will tell. For an example, now, this the <code>unary_helper</code> mentioned earlier and the new <code>make_temporary</code>, with the new structure threaded in.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">unary_helper</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    interner: </span><span style="font-weight:bold;color:#a71d5d;">*utils.StringInterner</span><span>,
+</span><span>    expr: </span><span style="font-weight:bold;color:#a71d5d;">*ast.Expr</span><span>,
+</span><span>    instrs: </span><span style="font-weight:bold;color:#a71d5d;">*std.ArrayListUnmanaged</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">ir.Instr</span><span>),
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">comptime </span><span>prefix: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>) helper_error</span><span style="font-weight:bold;color:#a71d5d;">!struct </span><span>{ ir.Value, ir.Value } {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>expr_emit_ir(alloc, interner, expr, instrs) </span><span style="font-weight:bold;color:#a71d5d;">catch
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.UnaryHelper;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dst_name </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>make_temporary(alloc, interner, prefix);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>dst: </span><span style="font-weight:bold;color:#a71d5d;">ir.Value =</span><span> .{ .variable </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> dst_name };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ src, dst };
+</span><span>}
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">make_temporary</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    interner: </span><span style="font-weight:bold;color:#a71d5d;">*utils.StringInterner</span><span>,
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">comptime </span><span>prefix: []</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">helper_error!</span><span>[:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8 </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>static </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>counter: </span><span style="font-weight:bold;color:#a71d5d;">usize = </span><span style="color:#0086b3;">0</span><span>;
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.fmt.allocPrint(
+</span><span>        alloc,
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(prefix.len </span><span style="font-weight:bold;color:#a71d5d;">== </span><span style="color:#0086b3;">0</span><span>) </span><span style="color:#183691;">&quot;temp&quot; </span><span style="font-weight:bold;color:#a71d5d;">else</span><span> prefix </span><span style="font-weight:bold;color:#a71d5d;">++ </span><span style="color:#183691;">&quot;.{}&quot;</span><span>,
+</span><span>        .{static.counter},
+</span><span>    ) </span><span style="font-weight:bold;color:#a71d5d;">catch return error</span><span>.MakeTemporary;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer</span><span> alloc.free(name);
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name_idx </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> interner.get_or_put(alloc, name) </span><span style="font-weight:bold;color:#a71d5d;">catch
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">return error</span><span>.MakeTemporary;
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> name_res </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> interner.get_string(name_idx)</span><span style="font-weight:bold;color:#a71d5d;">.?</span><span>; </span><span style="font-style:italic;color:#969896;">// &lt;- unwrap optional
+</span><span>
+</span><span>    static.counter </span><span style="font-weight:bold;color:#a71d5d;">+= </span><span style="color:#0086b3;">1</span><span>;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> name_res;
+</span><span>}
+</span></code></pre>
+<p>So this all compiles and runs and passes tests just fine. All is left is implementing the pretty printing myself, as the <code>json</code> module seemed to break for reasons I do not understand (related to the interner).<sup class="footnote-reference" id="fr-json_bug-1"><a href="#fn-json_bug">8</a></sup> The technique to do so was discussed in the Chapter 1 article, so no point in repeating it here. It is time to move on to the next section.</p>
+<hr />
+<h2 id="codegen">Codegen</h2>
+<p>The first task here is almost invariably to update the assembly AST to include more instructions. Again deviating from the book, I will splat the unary operator into the instructions. This will totally bite me later. The updated parts of the new AST look as follows:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Inst </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    mov: </span><span style="font-weight:bold;color:#a71d5d;">Mov</span><span>,
+</span><span>    ret: </span><span style="font-weight:bold;color:#a71d5d;">void</span><span>,
+</span><span>
+</span><span>    </span><span style="font-style:italic;color:#969896;">// unary operations
+</span><span>    neg: </span><span style="font-weight:bold;color:#a71d5d;">Operand</span><span>,
+</span><span>    not: </span><span style="font-weight:bold;color:#a71d5d;">Operand</span><span>,
+</span><span>
+</span><span>    allocate_stack: </span><span style="font-weight:bold;color:#a71d5d;">i64</span><span>, </span><span style="font-style:italic;color:#969896;">// same type as `.stack` below.
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>Mov </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>        src: </span><span style="font-weight:bold;color:#a71d5d;">Operand</span><span>,
+</span><span>        dst: </span><span style="font-weight:bold;color:#a71d5d;">Operand</span><span>,
+</span><span>
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">init</span><span>(src: </span><span style="font-weight:bold;color:#a71d5d;">Operand</span><span>, dst: </span><span style="font-weight:bold;color:#a71d5d;">Operand</span><span>) </span><span style="color:#62a35c;">@This</span><span>() {
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .src </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> src, .dst </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> dst };
+</span><span>        }
+</span><span>    };
+</span><span>};
+</span><span>
+</span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Operand </span><span style="font-weight:bold;color:#a71d5d;">= union</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">enum</span><span>) {
+</span><span>    imm: </span><span style="font-weight:bold;color:#a71d5d;">u64</span><span>,
+</span><span>    reg: </span><span style="font-weight:bold;color:#a71d5d;">Register</span><span>,
+</span><span>    stack: </span><span style="font-weight:bold;color:#a71d5d;">i64</span><span>,
+</span><span>
+</span><span>    pseudo: [:</span><span style="color:#0086b3;">0</span><span>]</span><span style="font-weight:bold;color:#a71d5d;">const u8</span><span>, </span><span style="font-style:italic;color:#969896;">// these get replaced
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">pub const </span><span>Register </span><span style="font-weight:bold;color:#a71d5d;">= enum </span><span>{ AX, R10 };
+</span><span>};
+</span></code></pre>
+<p>Oh there is a string there. Our string interner will come in handy.</p>
+<p>Another note: I am not perfectly happy with the way the book represents register. Because later in the book, when <code>long</code> and pointers are implemented, different names have to be chosen for each register, and I had to encode that info in the <code>Register</code> type itself, which led to weird amount of code duplications. I have not looked at how the <a href="https://github.com/nlsandler/nqcc2">reference OCaml implementation</a> does it. But I will cross that bridge when I come to it. So far all registers are 32 bits wide.</p>
+<p>Now <code>asm_gen.zig</code> is reworked to take the IR AST as input instead. This is almost a complete rewrite except for the first, trivial, <code>Prgm</code> transformation. Complicates the matter a bit is that IR instructions and Assembly instructions do not map 1 to 1, but each IR instruction can be one or more Assembly instructions. So I have to return a slice. Manual memory management strikes again.</p>
+<p>It is easier to start from the bottom up. This is IR values to Assembly operands. No allocator needed! Just copy the string's reference as is.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">value_to_asm</span><span>(
+</span><span>    value: </span><span style="font-weight:bold;color:#a71d5d;">ir.Value</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">assembly.Operand </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(value) {
+</span><span style="color:#0086b3;">        .constant </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>c</span><span style="font-weight:bold;color:#a71d5d;">| return</span><span> .{ .imm </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> c },
+</span><span style="color:#0086b3;">        .variable </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>v</span><span style="font-weight:bold;color:#a71d5d;">| return</span><span> .{ .pseudo </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> v },
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>And this is more involved <code>Instr</code> porter:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">instr_to_asm</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    instr: </span><span style="font-weight:bold;color:#a71d5d;">ir.Instr</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!</span><span>[]</span><span style="font-weight:bold;color:#a71d5d;">assembly.Instr </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(instr) {
+</span><span style="color:#0086b3;">        .ret </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>v</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>value_to_asm(v);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> ret </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> alloc.dupe(assembly.Instr, &amp;.{
+</span><span>                .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(src, .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .AX </span><span>}) },
+</span><span style="color:#0086b3;">                .ret</span><span>,
+</span><span>            });
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> ret;
+</span><span>        },
+</span><span style="color:#0086b3;">        .unop_complement </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>u</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>value_to_asm(u.src);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dst </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>value_to_asm(u.dst);
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> ret </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> alloc.dupe(assembly.Instr, &amp;.{
+</span><span>                .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(src, dst) },
+</span><span>                .{ .not </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> dst },
+</span><span>            });
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> ret;
+</span><span>        },
+</span><span style="color:#0086b3;">        .unop_negate </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>u</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>value_to_asm(u.src);
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dst </span><span style="font-weight:bold;color:#a71d5d;">= </span><span>value_to_asm(u.dst);
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> ret </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> alloc.dupe(assembly.Instr, &amp;.{
+</span><span>                .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(src, dst) },
+</span><span>                .{ .neg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> dst },
+</span><span>            });
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> ret;
+</span><span>        },
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>Not very DRY, and a lot is going on. Certainly a lot of (what is going to be very temporary) allocations. Returning pointers to stack space is a rookie mistake. (Thanks Rust!)</p>
+<p>The classic solution to a lot of temporary allocations in similar programs is to use an arena allocator, and then free it all at once when the function is done. This would be set up from <code>func_def_to_asm</code>. So here is the first attempt at it:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">func_def_to_asm</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    func_def: </span><span style="font-weight:bold;color:#a71d5d;">ir.FuncDef</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!assembly.FuncDef </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> arena_allocator </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.heap.ArenaAllocator.init(alloc);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer</span><span> arena_allocator.deinit();
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> arena </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> arena_allocator.allocator();
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var</span><span> instrs </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> std.ArrayListUnmanaged(assembly.Instr).empty;
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(func_def.instrs.items) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>instr</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-style:italic;color:#969896;">// note the different allocators for each function.
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> ret </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>instr_to_asm(arena, instr);
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try</span><span> instrs.appendSlice(alloc, ret);
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{
+</span><span>        .name </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> func_def.name,
+</span><span>        .instrs </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> instrs,
+</span><span>    };
+</span><span>}
+</span></code></pre>
+<p>And finally <code>Prgm</code> is trivial.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">prgm_to_asm</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    prgm: </span><span style="font-weight:bold;color:#a71d5d;">ir.Prgm</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!assembly.Prgm </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> func_def </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> utils.create(
+</span><span>        assembly.FuncDef,
+</span><span>        alloc,
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">try </span><span>func_def_to_asm(alloc, prgm.func_def</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>),
+</span><span>    );
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .func_def </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> func_def };
+</span><span>}
+</span></code></pre>
+<p>And the proof of the pudding is in the eating. But not before filling in all the <code>@panic("todo")</code>s and cleaning up the allocated memory. The code so far works and produces the expected result on the previously mentioned tiny C program, but codegen is not over yet.</p>
+<h2 id="fixing-up-instructions">Fixing Up Instructions</h2>
+<p>There are two final tasks before actually generating the assembly. First is to replace all them <code>.pseudo</code> operands with <code>.stack</code> operands. The Book used the <code>pseudo</code> operands as a placeholder, as the compiler does not have the stack info at hand yet. It needs to count the amount of intermediate, temporary variables, created during IR generation.</p>
+<p>The second is to rewrite illegal assembly instructions, such as moving from a stack to a stack, into legal ones.</p>
+<p>These are essentially additional compiler passes, and I am loath to do the same thing I did in my Rust implementation and stuff everything in one file. So a new directory is born, titled <code>asm_passes</code>, with two new Zig files in toe. If you are keeping track, this is my current folder structure.</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>./src
+</span><span>├── asm_gen.zig
+</span><span>├── asm_passes
+</span><span>│   ├── fixup.zig
+</span><span>│   └── pseudos.zig
+</span><span>├── assembly.zig
+</span><span>├── ast.zig
+</span><span>├── ir_gen.zig
+</span><span>├── ir.zig
+</span><span>├── lexer.zig
+</span><span>├── main.zig
+</span><span>├── parser.zig
+</span><span>└── utils.zig
+</span></code></pre>
+<p>Most of them are self descriptive. <code>utils</code> is where the string interner definition lives and, currently, one <code>create</code> function, that allocates a value on the heap.</p>
+<h3 id="pseudoregisters">Pseudoregisters</h3>
+<p>This simply goes over the <code>instrs</code> array stored in <code>FuncDef</code> to change up the arrays. The interesting challenge here is maintaining a map from identifiers to stack offsets. Storing the strings as map keys is horribly wasteful, so the string interner's <code>Idx</code> type is used instead, so it passes in.</p>
+<p>I probably made this a lot harder for myself. I tried to implement my own hash map adapter type, then had a struggle with Zig's syntax for references. Eventually, Good prevailed and the code was compiled.</p>
+<p>The building block is this "simple" function, with a minimal amount of parameters. <code>getOrPut</code> is a standard library function that almost does what it says on the tin, but gives you pointers to place the key and value yourself as you please. I opted to use a managed (not <code>Unmanaged</code>) hash map here to spare myself an allocator parameter. I could shave off <code>strings</code> too if I manage to figure out how <code>Context</code> works.<sup class="footnote-reference" id="fr-stringhashmap-1"><a href="#fn-stringhashmap">9</a></sup></p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">fn </span><span style="font-weight:bold;color:#795da3;">pseudo_to_stack</span><span>(
+</span><span>    op: </span><span style="font-weight:bold;color:#a71d5d;">assembly.Operand</span><span>,
+</span><span>    strings: </span><span style="font-weight:bold;color:#a71d5d;">*utils.StringInterner</span><span>,
+</span><span>    map: </span><span style="font-weight:bold;color:#a71d5d;">*std.AutoHashMap</span><span>(
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">utils.StringInterner.Idx</span><span>,
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">assembly.Operand.StackDepth</span><span>,
+</span><span>    ),
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!assembly.Operand </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">const </span><span>static </span><span style="font-weight:bold;color:#a71d5d;">= struct </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>counter: </span><span style="font-weight:bold;color:#a71d5d;">assembly.Operand.StackDepth = </span><span style="color:#0086b3;">0</span><span>;
+</span><span>    };
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(op) {
+</span><span style="color:#0086b3;">        .reg</span><span>,</span><span style="color:#0086b3;"> .imm</span><span>,</span><span style="color:#0086b3;"> .stack </span><span style="font-weight:bold;color:#a71d5d;">=&gt; return</span><span> op,
+</span><span style="color:#0086b3;">        .pseudo </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>name</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> idx </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> strings.get_idx(name)</span><span style="font-weight:bold;color:#a71d5d;">.?</span><span>;
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> gop </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> map.getOrPut(idx);
+</span><span>
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">if </span><span>(gop.found_existing) {
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .stack </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> gop.value_ptr</span><span style="font-weight:bold;color:#a71d5d;">.* </span><span>};
+</span><span>            } </span><span style="font-weight:bold;color:#a71d5d;">else </span><span>{
+</span><span>                static.counter </span><span style="font-weight:bold;color:#a71d5d;">-= </span><span style="color:#0086b3;">4</span><span>;
+</span><span>
+</span><span>                gop.key_ptr</span><span style="font-weight:bold;color:#a71d5d;">.* =</span><span> idx;
+</span><span>                gop.value_ptr</span><span style="font-weight:bold;color:#a71d5d;">.* =</span><span> static.counter;
+</span><span>
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">return</span><span> .{ .stack </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> gop.value_ptr</span><span style="font-weight:bold;color:#a71d5d;">.* </span><span>};
+</span><span>            }
+</span><span>        },
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>The public facing function that runs on <code>assembly.Prgm</code> comes next. The <code>&amp;</code> and <code>*</code> and <code>.*</code> sprinkled over the loop's variables took a lot of trial and error and Zig discord help to get right. But the shared payload between <code>.neg</code> and <code>.not</code> does not to be duplicated.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">replace_pseudos</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    strings: </span><span style="font-weight:bold;color:#a71d5d;">*utils.StringInterner</span><span>,
+</span><span>    prgm: </span><span style="font-weight:bold;color:#a71d5d;">*assembly.Prgm</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>pseudo_map: std.AutoHashMap(
+</span><span>        utils.StringInterner.Idx,
+</span><span>        assembly.Operand.StackDepth,
+</span><span>    ) </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(alloc);
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer</span><span> pseudo_map.deinit();
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(prgm.func_def.instrs.items) </span><span style="font-weight:bold;color:#a71d5d;">|*</span><span>instr</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    </span><span style="font-style:italic;color:#969896;">//   ^ no address operator as it is already a slice
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(instr</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>) {
+</span><span style="color:#0086b3;">            .mov </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>m</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>                </span><span style="font-style:italic;color:#969896;">//   ^ this was the tricky one to find
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> src </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>pseudo_to_stack(m.src, strings, </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>pseudo_map);
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">const</span><span> dst </span><span style="font-weight:bold;color:#a71d5d;">= try </span><span>pseudo_to_stack(m.dst, strings, </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>pseudo_map);
+</span><span>
+</span><span>                m</span><span style="font-weight:bold;color:#a71d5d;">.* =</span><span> .init(src, dst);
+</span><span>            },
+</span><span style="color:#0086b3;">            .neg</span><span>,</span><span style="color:#0086b3;"> .not </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |*</span><span>v</span><span style="font-weight:bold;color:#a71d5d;">|</span><span> v</span><span style="font-weight:bold;color:#a71d5d;">.* = try </span><span>pseudo_to_stack(v</span><span style="font-weight:bold;color:#a71d5d;">.*</span><span>, strings, </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>pseudo_map),
+</span><span>
+</span><span style="color:#0086b3;">            .ret</span><span>,</span><span style="color:#0086b3;"> .allocate_stack </span><span style="font-weight:bold;color:#a71d5d;">=&gt; </span><span>{},
+</span><span>        }
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>It works. Thankfully. This little bit made me tear my hair out.<sup class="footnote-reference" id="fr-zig-1"><a href="#fn-zig">10</a></sup></p>
+<p>As a small comparison, this is the C file in question, followed by the pretty printed codegen before and after replacing pseudoregisters.</p>
+<pre data-lang="c" style="background-color:#ffffff;color:#323232;" class="language-c "><code class="language-c" data-lang="c"><span style="font-style:italic;color:#969896;">// to save you a scroll
+</span><span style="font-weight:bold;color:#a71d5d;">int </span><span style="font-weight:bold;color:#795da3;">main</span><span>(</span><span style="font-weight:bold;color:#a71d5d;">void</span><span>) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">return ~-</span><span style="color:#0086b3;">3</span><span>;
+</span><span>}
+</span></code></pre>
+<pre data-lang="asm" style="background-color:#ffffff;color:#323232;" class="language-asm "><code class="language-asm" data-lang="asm"><span style="font-weight:bold;color:#795da3;">#before
+</span><span style="font-weight:bold;color:#795da3;">PROGRAM
+</span><span style="font-weight:bold;color:#795da3;">	FUNCTION main
+</span><span style="font-weight:bold;color:#795da3;">		</span><span style="font-weight:bold;color:#a71d5d;">mov	</span><span style="font-weight:bold;color:#795da3;">imm </span><span style="color:#0086b3;">3 </span><span>-</span><span style="font-weight:bold;color:#795da3;">&gt; pseudo </span><span style="font-weight:bold;color:#a71d5d;">neg</span><span style="font-weight:bold;color:#795da3;">.</span><span style="color:#0086b3;">0
+</span><span style="font-weight:bold;color:#795da3;">		</span><span style="font-weight:bold;color:#a71d5d;">neg	</span><span style="font-weight:bold;color:#795da3;">pseudo </span><span style="font-weight:bold;color:#a71d5d;">neg</span><span style="font-weight:bold;color:#795da3;">.</span><span style="color:#0086b3;">0
+</span><span style="font-weight:bold;color:#795da3;">		</span><span style="font-weight:bold;color:#a71d5d;">mov	</span><span style="font-weight:bold;color:#795da3;">pseudo </span><span style="font-weight:bold;color:#a71d5d;">neg</span><span style="font-weight:bold;color:#795da3;">.</span><span style="color:#0086b3;">0 </span><span>-</span><span style="font-weight:bold;color:#795da3;">&gt; pseudo cml.</span><span style="color:#0086b3;">1
+</span><span style="font-weight:bold;color:#795da3;">		</span><span style="font-weight:bold;color:#a71d5d;">not	</span><span style="font-weight:bold;color:#795da3;">pseudo cml.</span><span style="color:#0086b3;">1
+</span><span style="font-weight:bold;color:#795da3;">		</span><span style="font-weight:bold;color:#a71d5d;">mov	</span><span style="font-weight:bold;color:#795da3;">pseudo cml.</span><span style="color:#0086b3;">1 </span><span>-</span><span style="font-weight:bold;color:#795da3;">&gt; </span><span>AX
+</span><span style="font-weight:bold;color:#795da3;">		</span><span style="font-weight:bold;color:#a71d5d;">ret
+</span></code></pre>
+<pre data-lang="asm" style="background-color:#ffffff;color:#323232;" class="language-asm "><code class="language-asm" data-lang="asm"><span style="font-weight:bold;color:#795da3;"># afer
+</span><span style="font-weight:bold;color:#795da3;">PROGRAM
+</span><span style="font-weight:bold;color:#795da3;">	FUNCTION main
+</span><span style="font-weight:bold;color:#795da3;">		</span><span style="font-weight:bold;color:#a71d5d;">mov	</span><span style="font-weight:bold;color:#795da3;">imm </span><span style="color:#0086b3;">3 </span><span>-</span><span style="font-weight:bold;color:#795da3;">&gt; stack </span><span>-</span><span style="color:#0086b3;">4
+</span><span style="font-weight:bold;color:#795da3;">		</span><span style="font-weight:bold;color:#a71d5d;">neg	</span><span style="font-weight:bold;color:#795da3;">stack </span><span>-</span><span style="color:#0086b3;">4
+</span><span style="font-weight:bold;color:#795da3;">		</span><span style="font-weight:bold;color:#a71d5d;">mov	</span><span style="font-weight:bold;color:#795da3;">stack </span><span>-</span><span style="color:#0086b3;">4 </span><span>-</span><span style="font-weight:bold;color:#795da3;">&gt; stack </span><span>-</span><span style="color:#0086b3;">8
+</span><span style="font-weight:bold;color:#795da3;">		</span><span style="font-weight:bold;color:#a71d5d;">not	</span><span style="font-weight:bold;color:#795da3;">stack </span><span>-</span><span style="color:#0086b3;">8
+</span><span style="font-weight:bold;color:#795da3;">		</span><span style="font-weight:bold;color:#a71d5d;">mov	</span><span style="font-weight:bold;color:#795da3;">stack </span><span>-</span><span style="color:#0086b3;">8 </span><span>-</span><span style="font-weight:bold;color:#795da3;">&gt; </span><span>AX
+</span><span style="font-weight:bold;color:#795da3;">		</span><span style="font-weight:bold;color:#a71d5d;">ret
+</span></code></pre>
+<p>This is a horribly inefficient compiler, but it clearly works as intended. Optimization comes later in Part 3 of the book.</p>
+<h3 id="fixing-instructions">Fixing Instructions</h3>
+<p>The first fixup is to insert the <code>.allocate_stack</code> instruction with the depth of the stack. But this is not being returned anywhere! So a slight rejiggering of <code>pseudo_to_stack</code> to use a passed in counter instead of a local static one, and having <code>replace_pseudos</code> return the stack depth, would solve the problem. Simple, if annoying, code change.</p>
+<p>Then adding the first instruction this way becomes fairly simple. Bad performance for this one step but I am not paying too much attention to that.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const</span><span> depth </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> pass_pseudo.replace_pseudos(alloc, strings, prgm_asm);
+</span><span style="font-weight:bold;color:#a71d5d;">try</span><span> prgm_asm.func_def.instrs.insert(
+</span><span>    alloc,
+</span><span>    </span><span style="color:#0086b3;">0</span><span>,
+</span><span>    .{ .allocate_stack </span><span style="font-weight:bold;color:#a71d5d;">= </span><span style="color:#62a35c;">@intCast</span><span>(</span><span style="color:#62a35c;">@abs</span><span>(depth)) },
+</span><span>    </span><span style="font-style:italic;color:#969896;">//                            ^ this retunrs an unsigned int.
+</span><span>);
+</span><span style="font-style:italic;color:#969896;">// next step gets called here
+</span></code></pre>
+<p>The other, more involved step is fixing up illegal instructions. If you know anything about x86 assembly, you would know that you cannot make a <code>mov</code> instruction between two stack places. There are reasons for that that I do not particularly care about. Why cannot the Book compile to a saner assembly language like WASM? I am not even on a x86 machine! Thankfully, this is the only thing to deal with in this chapter. Here is my first pass at the code.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">pub fn </span><span style="font-weight:bold;color:#795da3;">fixup_instrs</span><span>(
+</span><span>    alloc: </span><span style="font-weight:bold;color:#a71d5d;">std.mem.Allocator</span><span>,
+</span><span>    prgm: </span><span style="font-weight:bold;color:#a71d5d;">*assembly.Prgm</span><span>,
+</span><span>) </span><span style="font-weight:bold;color:#a71d5d;">!void </span><span>{
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">var </span><span>out: std.ArrayListUnmanaged(assembly.Instr) </span><span style="font-weight:bold;color:#a71d5d;">= try</span><span> .initCapacity(
+</span><span>        alloc,
+</span><span>        prgm.func_def.instrs.capacity,
+</span><span>    );
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">defer </span><span>{
+</span><span>        std.mem.swap(
+</span><span>            std.ArrayListUnmanaged(assembly.Instr),
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>out,
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">&amp;</span><span>prgm.func_def.instrs,
+</span><span>        );
+</span><span>        out.deinit(alloc);
+</span><span>    }
+</span><span>
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">for </span><span>(prgm.func_def.instrs.items) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>instr</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>        </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(instr) {
+</span><span style="color:#0086b3;">            .mov </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>m</span><span style="font-weight:bold;color:#a71d5d;">| switch </span><span>(m.src) {
+</span><span style="color:#0086b3;">                .stack </span><span style="font-weight:bold;color:#a71d5d;">=&gt; switch </span><span>(m.dst) {
+</span><span style="color:#0086b3;">                    .stack </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> out.appendSlice(alloc, &amp;.{
+</span><span>                        .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(m.src, .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R10 </span><span>}) },
+</span><span>                        .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R10 </span><span>}, m.dst) },
+</span><span>                    }),
+</span><span>                    </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; try</span><span> out.append(alloc, instr),
+</span><span>                },
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; try</span><span> out.append(alloc, instr),
+</span><span>            },
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; try</span><span> out.append(alloc, instr),
+</span><span>        }
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>So much rightwards drift. It would perhaps be more readable to express it as a state machine, like the tokenizer works. I will make sure this works as intended first then try to streamline it, as this is untenable. Time to run the codegen tests.</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>Ran 43 tests in 5.153s
+</span><span>
+</span><span>OK
+</span></code></pre>
+<h2 id="code-emission">Code Emission</h2>
+<p>Before we get into the state machine, it is better to be done with code emission. It is a fairly simple and mechanical exercise as it just requires updating the printing code, but it could expose pretty much any bugs in the program.</p>
+<p>and ...</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>Ran 43 tests in 5.147s
+</span><span>
+</span><span>FAILED (errors=19)
+</span></code></pre>
+<p>Oh come on. This turns out to be a combination of some commented out code when I was updating the compiler driver to include IR, <em>and</em> dumb spelling mistakes I did in this fairly simple and mechanical task, such as writing <code>&amp;</code> instead of <code>%</code>. Simple mistakes, really.</p>
+<p>All tests pass now:</p>
+<pre style="background-color:#ffffff;color:#323232;"><code><span>Ran 43 tests in 14.731s
+</span><span>
+</span><span>OK
+</span></code></pre>
+<hr />
+<h2 id="state-machine">State Machine</h2>
+<p>Following from the tokenizer's code, I defined a simple <code>State</code> enum:</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">const </span><span>State </span><span style="font-weight:bold;color:#a71d5d;">= enum </span><span>{
+</span><span>    start,
+</span><span>    mov_stack_stack,
+</span><span>    legal,
+</span><span>};
+</span></code></pre>
+<p>And the main <code>switch</code> inside the loop turns into a labelled <code>switch</code> over <code>State</code>, in which each state has its own logic, but any legal instruction just funnels to <code>.legal</code>. To be honest, writing this was easier than I expected it to be. It even worked on the first iteration, after I fixed the variable names. This is the second.</p>
+<p>Jury's up whether the state machine is more readable than the nested <code>switch</code>es, but I think I will stick with it for the time being. It passes all tests.</p>
+<pre data-lang="zig" style="background-color:#ffffff;color:#323232;" class="language-zig "><code class="language-zig" data-lang="zig"><span style="font-weight:bold;color:#a71d5d;">for </span><span>(prgm.func_def.instrs.items) </span><span style="font-weight:bold;color:#a71d5d;">|</span><span>instr</span><span style="font-weight:bold;color:#a71d5d;">| </span><span>{
+</span><span>    state: </span><span style="font-weight:bold;color:#a71d5d;">switch </span><span>(State.start) {
+</span><span style="color:#0086b3;">        .start </span><span style="font-weight:bold;color:#a71d5d;">=&gt; switch </span><span>(instr) {
+</span><span style="color:#0086b3;">            .mov </span><span style="font-weight:bold;color:#a71d5d;">=&gt; |</span><span>m</span><span style="font-weight:bold;color:#a71d5d;">| if </span><span>(m.src </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .stack </span><span style="font-weight:bold;color:#a71d5d;">and</span><span> m.dst </span><span style="font-weight:bold;color:#a71d5d;">==</span><span style="color:#0086b3;"> .stack</span><span>)
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .mov_stack_stack
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">else
+</span><span>                </span><span style="font-weight:bold;color:#a71d5d;">continue</span><span> :state</span><span style="color:#0086b3;"> .legal</span><span>,
+</span><span>            </span><span style="font-weight:bold;color:#a71d5d;">else =&gt; continue</span><span> :state</span><span style="color:#0086b3;"> .legal</span><span>,
+</span><span>        },
+</span><span>
+</span><span style="color:#0086b3;">        .mov_stack_stack </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> out.appendSlice(alloc, &amp;.{
+</span><span>            .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(instr.mov.src, .{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R10 </span><span>}) },
+</span><span>            .{ .mov </span><span style="font-weight:bold;color:#a71d5d;">=</span><span> .init(.{ .reg </span><span style="font-weight:bold;color:#a71d5d;">=</span><span style="color:#0086b3;"> .R10 </span><span>}, instr.mov.dst) },
+</span><span>        }),
+</span><span>
+</span><span style="color:#0086b3;">        .legal </span><span style="font-weight:bold;color:#a71d5d;">=&gt; try</span><span> out.append(alloc, instr),
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>Just for comparison's sake, this is the equivalent code in <a href="https://github.com/asibahi/trjm/blob/6bfc750386f2f3b886021a0351c9a716d26558f2/src/asm.rs">my Rust implementation</a>.</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#323232;" class="language-rust "><code class="language-rust" data-lang="rust"><span style="font-weight:bold;color:#a71d5d;">for</span><span> instr </span><span style="font-weight:bold;color:#a71d5d;">in </span><span>std::mem::take(</span><span style="font-weight:bold;color:#a71d5d;">&amp;mut </span><span>self.instrs) {
+</span><span>    </span><span style="font-weight:bold;color:#a71d5d;">match</span><span> instr {
+</span><span>        Instr::Mov {
+</span><span>            src: src </span><span style="font-weight:bold;color:#a71d5d;">@ </span><span>Operand::Stack(</span><span style="font-weight:bold;color:#a71d5d;">_</span><span>),
+</span><span>            dst: dst </span><span style="font-weight:bold;color:#a71d5d;">@ </span><span>Operand::Stack(</span><span style="font-weight:bold;color:#a71d5d;">_</span><span>),
+</span><span>        } </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> out.</span><span style="color:#62a35c;">extend</span><span>([
+</span><span>            Instr::Mov {
+</span><span>                src,
+</span><span>                dst: Operand::Reg(Register::</span><span style="color:#0086b3;">R10</span><span>),
+</span><span>            },
+</span><span>            Instr::Mov {
+</span><span>                src: Operand::Reg(Register::</span><span style="color:#0086b3;">R10</span><span>),
+</span><span>                dst,
+</span><span>            },
+</span><span>        ]),
+</span><span>        other </span><span style="font-weight:bold;color:#a71d5d;">=&gt;</span><span> out.</span><span style="color:#62a35c;">push</span><span>(other),
+</span><span>    }
+</span><span>}
+</span></code></pre>
+<p>Pattern matching is the best. And this concludes Chapter 2.</p>
+<hr />
+<h2 id="lessons-learned">Lessons Learned</h2>
+<ol>
+<li>Building a cool state machine from zero.</li>
+<li>More manual memory management magic tricks. (Couldn't push the alliteration further.)</li>
+<li>Subshells, and a more automated testing process.</li>
+<li>First taste of <code>comptime</code>. ULTIMATE POWER.</li>
+</ol>
+<p>Maybe next time I will compile the tests to be always in <code>ReleaseSafe</code> instead of <code>Debug</code> mode. Would certainly make things go more smoothly. Need to figure that one out.</p>
+<hr />
+<footer class="footnotes">
+<ol class="footnotes-list">
+<li id="fn-main">
+<p>I refactored the code a bit after chapter 1 and added proper support for the <code>identifier</code> token. It is a trivial change so no point in detailing it further, except that the new <code>expect</code> is cooler than before. <a href="#fr-main-1">↩</a></p>
+</li>
+<li id="fn-json">
+<p>There is an argument to be made for replacing my custom pretty printer with standard library's <code>json</code> serializer. The result is more verbose and has more vertical space and redundant info, but on the plus side, it requires zero maintenance. <a href="#fr-json-1">↩</a></p>
+</li>
+<li id="fn-madness">
+<p>Sounds good for a book title or something, doesn't it? <a href="#fr-madness-1">↩</a></p>
+</li>
+<li id="fn-matklad">
+<p>Inspired by <a href="https://matklad.github.io/2025/04/21/fun-zig-program.html">matklad</a>. <a href="#fr-matklad-1">↩</a></p>
+</li>
+<li id="fn-binary">
+<p>Binary operations are in the next chapter. <a href="#fr-binary-1">↩</a></p>
+</li>
+<li id="fn-struct">
+<p>Helps to keep in mind that every file in Zig is a struct, too. <a href="#fr-struct-1">↩</a></p>
+</li>
+<li id="fn-adapters">
+<p>A useful read, which was educational for me on Contexts and Adaptors (in current Zig version, at least), are the Zig issues <a href="https://github.com/ziglang/zig/issues/21917">#21917</a> and <a href="https://github.com/ziglang/zig/issues/23872">#23872</a>, especially <a href="https://github.com/mlugg">mulgg</a>'s comments. On the zig discord, mlugg gave me this useful summary: "they're quite similar. a context is essentially an adapter but for the 'real' key type; a context tells you how to hash/eql the actual <code>comptime K: T</code>, whereas an adapter allows you to insert <em>different</em> key types as long as you can implement <em>compatible</em> hash/eql on them". <a href="#fr-adapters-1">↩</a></p>
+</li>
+<li id="fn-json_bug">
+<p>The crash disappeared when I removed the needless reference to the interner from the <code>ir.Prgm</code> struct, but I hit a new problem. The null terminated strings were printing as <code>"main\u0000"</code>. I am not sure if this is a standard library bug or a bug in my code. Definitely a case of debugging my language knowledge. <a href="#fr-json_bug-1">↩</a></p>
+</li>
+<li id="fn-stringhashmap">
+<p>I ended up replacing the hashmap here with <code>std.StringHashMap</code> which does exactly what I want and allowed me to avoid passing the string interner. My mistake was assuming, for some reason, that <code>StringHashMap</code> stores the strings inernally, but it just stores the slices already backed by the interner. <a href="#fr-stringhashmap-1">↩</a></p>
+</li>
+<li id="fn-zig">
+<p>I was debugging my language knowledge, it seems. <a href="#fr-zig-1">↩</a></p>
+</li>
+</ol>
+</footer>
+</main>
+
+			
+			
+				<footer>
+					<small>
+						
+							<a class="mylink" href="mailto:a.sibahi@gmail.com" rel="me">Mail</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;x.com&#x2F;@asibahi" rel="me">Twitter</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;typo.social&#x2F;@asibahi" rel="me">typo.social</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;sr.ht&#x2F;~asibahi&#x2F;" rel="me">SourceHut</a>
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;github.com&#x2F;asibahi" rel="me">GitHub</a>
+						
+						
+							<a class="mylink" href="https:&#x2F;&#x2F;blog.ar-ms.me&#x2F;about&#x2F;">Cat</a>
+						
+					</small>
+				</footer>
+			
+		</div>
+	</body>
+</html>
